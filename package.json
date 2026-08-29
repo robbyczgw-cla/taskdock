@@ -23,7 +23,16 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE", "docs"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "docs/CLIENT_COMPATIBILITY.md",
+    "docs/INTEROP_RESULTS.md",
+    "docs/PROTOCOL_NOTES.md",
+    "docs/SPIKE_RESULTS.md",
+    "docs/interop/INSPECTOR.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",

@@ -54,9 +54,12 @@ MIT License. See [LICENSE](LICENSE).
 ## Install
 
 ```bash
-npm install -g taskdock   # not published yet; use npm pack locally
-npx taskdock --help
+npm pack
+npm install -g ./taskdock-0.1.0.tgz
+taskdock --help
 ```
+
+Not published to npm yet. `npx taskdock` will not work until then.
 
 Needs Node 22 or newer for `node:sqlite`.
 
@@ -113,7 +116,7 @@ the server itself, and gets the answer.
 
 Store a server profile. `--auth` names an environment variable, not a secret.
 TaskDock reads that variable when it connects and never writes the value to
-disk.
+disk. Anything other than `env:VAR` is rejected.
 
 ### `server list`
 

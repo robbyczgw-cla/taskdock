@@ -1,0 +1,9 @@
+docs/_*
+docs/_*.md
+data/
+*.tgz
+*.db
+*.db-wal
+*.db-shm
+scratch/
+examples/rmcp-task-server/target/

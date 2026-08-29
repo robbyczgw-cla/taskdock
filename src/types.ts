@@ -19,7 +19,7 @@ export type ServerProfile = {
   transport: Transport;
   /**
    * Reference to an external auth mechanism, not a secret.
-   * Spike values: "none" | "env:TASKDOCK_AUTH_TOKEN"
+   * Only `env:VAR` is stored. Literal credentials are rejected.
    */
   authProfile?: string;
 };

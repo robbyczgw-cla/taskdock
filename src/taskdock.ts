@@ -1,5 +1,6 @@
 import { defaultDbPath, openDatabase, type Database } from "./registry/db.js";
 import { Registry } from "./registry/repository.js";
+import { normalizeAuthProfile } from "./server-profiles/profiles.js";
 import type {
   RegisterTaskInput,
   ServerProfile,
@@ -21,7 +22,10 @@ export class TaskDock {
   }
 
   addServer(profile: ServerProfile): ServerProfile {
-    return this.registry.addServer(profile);
+    return this.registry.addServer({
+      ...profile,
+      authProfile: normalizeAuthProfile(profile.authProfile),
+    });
   }
 
   listServers(): ServerProfile[] {

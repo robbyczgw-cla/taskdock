@@ -147,6 +147,29 @@ test("removeServer succeeds when no tasks reference it", () => {
   dock.close();
 });
 
+test("addServer stores env:VAR and rejects a literal credential", () => {
+  const dock = new TaskDock(tempDb());
+  const stored = dock.addServer({
+    id: "demo",
+    name: "demo",
+    transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
+    authProfile: "env:TASKDOCK_AUTH_TOKEN",
+  });
+  assert.equal(stored.authProfile, "env:TASKDOCK_AUTH_TOKEN");
+  assert.throws(
+    () =>
+      dock.addServer({
+        id: "bad",
+        name: "bad",
+        transport: { type: "http", url: "http://127.0.0.1:2/mcp" },
+        authProfile: "literal-demo-credential",
+      }),
+    /env:VAR|does not store credential/,
+  );
+  assert.equal(dock.getServer("bad"), undefined);
+  dock.close();
+});
+
 test("label round-trips", () => {
   const dock = new TaskDock(tempDb());
   dock.addServer({

@@ -130,6 +130,53 @@ test("show --json contains the full taskHandle", async () => {
   assert.equal(task.taskHandle, taskHandle);
 });
 
+test("server add --auth env:VAR stores the reference", async () => {
+  const db = tempDb();
+  const added = await runCli(
+    [
+      "server",
+      "add",
+      "demo",
+      "--http",
+      "http://127.0.0.1:3333/mcp",
+      "--auth",
+      "env:TASKDOCK_AUTH_TOKEN",
+    ],
+    db,
+  );
+  assertSucceeded(added);
+
+  const shown = await runCli(["server", "show", "demo"], db);
+  assertSucceeded(shown);
+  const profile = JSON.parse(shown.stdout) as { authProfile?: string };
+  assert.equal(profile.authProfile, "env:TASKDOCK_AUTH_TOKEN");
+});
+
+test("server add --auth rejects a literal credential", async () => {
+  const db = tempDb();
+  const added = await runCli(
+    [
+      "server",
+      "add",
+      "demo",
+      "--http",
+      "http://127.0.0.1:3333/mcp",
+      "--auth",
+      "literal-demo-credential",
+    ],
+    db,
+  );
+  assert.notEqual(added.code, 0);
+  assert.match(
+    `${added.stderr}\n${added.stdout}`,
+    /env:VAR|does not store credential/,
+  );
+
+  const listed = await runCli(["server", "list", "--json"], db);
+  assertSucceeded(listed);
+  assert.equal(JSON.parse(listed.stdout).length, 0);
+});
+
 test("missing task reports its TaskDock id", async () => {
   const id = "td_missing";
   const result = await runCli(["show", id]);

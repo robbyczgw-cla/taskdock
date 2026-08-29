@@ -46,6 +46,20 @@ test("npm pack installs a working taskdock binary", {
   assert.ok(tarballName?.endsWith(".tgz"), `expected tarball name, got: ${packed.stdout}`);
   const tarball = join(repoRoot, tarballName);
 
+  const contents = await run("tar", ["-tzf", tarball]);
+  assert.equal(contents.code, 0, contents.stderr || contents.stdout);
+  const paths = contents.stdout.split(/\r?\n/).filter(Boolean);
+  const scratch = paths.filter((p) => /(?:^|\/)docs\/_/.test(p));
+  assert.deepEqual(scratch, [], `tarball must not include internal docs: ${scratch.join(", ")}`);
+  assert.ok(
+    paths.some((p) => p.endsWith("docs/SPIKE_RESULTS.md")),
+    "tarball should include public spike results",
+  );
+  assert.ok(
+    paths.some((p) => p.endsWith("docs/interop/INSPECTOR.md")),
+    "tarball should include Inspector notes",
+  );
+
   const prefix = tempDir("taskdock-pack-");
   try {
     const installed = await run("npm", ["install", "--prefix", prefix, tarball]);
