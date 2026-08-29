@@ -15,7 +15,10 @@
     "client-b": "tsx src/clients/client-b.ts",
     "demo": "tsx scripts/demo.ts",
     "test": "tsx --test --test-reporter=spec tests/*.test.ts",
-    "experiments": "tsx scripts/experiments.ts"
+    "experiments": "tsx scripts/experiments.ts",
+    "interop": "tsx scripts/interop.ts",
+    "interop:server": "docker compose -f examples/rmcp-task-server/docker-compose.yml up --build",
+    "test:interop": "tsx scripts/interop.ts"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

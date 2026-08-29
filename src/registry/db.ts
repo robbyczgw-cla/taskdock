@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { SCHEMA_SQL } from "./schema.ts";
@@ -17,5 +17,10 @@ export function openDatabase(path = defaultDbPath()): Database {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec(SCHEMA_SQL);
+  try {
+    chmodSync(path, 0o600);
+  } catch {
+    // ignore on platforms that cannot chmod
+  }
   return db;
 }

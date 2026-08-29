@@ -12,6 +12,14 @@ const delayMs = Number(process.env.TASKDOCK_DELAY_MS ?? 4000);
 const message = process.env.TASKDOCK_MESSAGE ?? "hello from client-a";
 const handle = process.env.TASKDOCK_HANDLE;
 const serverId = process.env.TASKDOCK_SERVER_ID ?? "demo";
+const tool = process.env.TASKDOCK_TOOL ?? "slow_echo";
+const toolArgs = process.env.TASKDOCK_TOOL_ARGS
+  ? (JSON.parse(process.env.TASKDOCK_TOOL_ARGS) as Record<string, unknown>)
+  : {
+      message,
+      delayMs,
+      ...(handle ? { handle } : {}),
+    };
 
 async function main(): Promise<void> {
   console.log("[client-a]");
@@ -34,16 +42,9 @@ async function main(): Promise<void> {
   console.log("This process will exit after register. No polling loop is kept.");
   console.log();
 
-  const task = await callToolTask(
-    profile,
-    "slow_echo",
-    {
-      message,
-      delayMs,
-      ...(handle ? { handle } : {}),
-    },
-    { client: { name: "client-a" } },
-  );
+  const task = await callToolTask(profile, tool, toolArgs, {
+    client: { name: "client-a" },
+  });
 
   console.log("taskId:");
   console.log(task.taskId);

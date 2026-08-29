@@ -3,7 +3,7 @@
  * Must not import client-a. Must not reuse an open connection.
  */
 import { TaskDock } from "../taskdock.ts";
-import { connect, pollUntilTerminal } from "../mcp/client.ts";
+import { connect, identityWarning, pollUntilTerminal } from "../mcp/client.ts";
 
 const id = process.argv[2] ?? process.env.TASKDOCK_ID;
 
@@ -39,6 +39,11 @@ async function main(): Promise<void> {
     version: "0.1.0",
   });
   console.log(`serverInfo: ${JSON.stringify(connected.serverInfo)}`);
+  const warn = identityWarning(
+    ref.record.metadata?.serverInfo as Record<string, unknown> | undefined,
+    connected.serverInfo ?? {},
+  );
+  if (warn) console.warn(warn);
   console.log("Polling task...");
   console.log();
 

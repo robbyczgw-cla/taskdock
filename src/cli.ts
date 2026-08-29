@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { TaskDock } from "./taskdock.ts";
 import { profileFromFlags } from "./server-profiles/profiles.ts";
-import { connect, getTask, pollUntilTerminal } from "./mcp/client.ts";
+import { connect, getTask, identityWarning, pollUntilTerminal } from "./mcp/client.ts";
 import { McpRpcError } from "./mcp/transport.ts";
 import { PROTOCOL_VERSION, TASKS_EXTENSION_VERSION } from "./mcp/meta.ts";
 
@@ -165,9 +165,12 @@ async function main(): Promise<void> {
         name: "taskdock-cli",
         version: "0.1.0",
       });
-      console.log(
-        `serverInfo: ${JSON.stringify(connected.serverInfo?.name ?? connected.serverInfo)}`,
+      console.log(`serverInfo: ${JSON.stringify(connected.serverInfo)}`);
+      const warn = identityWarning(
+        ref.record.metadata?.serverInfo as Record<string, unknown> | undefined,
+        connected.serverInfo ?? {},
       );
+      if (warn) console.warn(warn);
       const onTick = (task: { status: string; statusMessage?: string }) => {
         dock.registry.touch(ref.id, task.status);
         console.log(
