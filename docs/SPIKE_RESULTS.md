@@ -32,16 +32,16 @@ A spec-compliant `io.modelcontextprotocol/tasks` server lets Client B resume Cli
 | A same process | PASS | handle polled in the creating process |
 | B TaskDock restart | PASS | SQLite reopen, then `tasks/get` |
 | C Client A gone | PASS | `client-a` exit 0, then independent poll `working` |
-| D new MCP session | PASS | new client name, no session id, same handle |
+| D new MCP session | PASS | new client name on a new POST. Weak alone (no session state exists). E/F/G are the real cross-process evidence. |
 | E different clients | PASS | `client-a.ts` then `client-b.ts`, completed `hello` |
 | F no runtime state | PASS | `taskdock resume` in a new process, completed `F` |
 | G other machine (dir copy) | PASS | copied only sqlite host→guest, completed `G` |
 | H bad handles | PASS | not found / expired / wrong server; rows kept; cancel → `cancelled` |
 | Mode B contrast | PASS | new connection → `Task not found in this session` |
 
-**Registry tests:** 15/15, including opaque handles (`cfth1:....`, `backend/task/123`, unicode, 400-char blobs) and `(server_profile_id, task_handle)` uniqueness.
+**Tests:** 6 registry + 9 MCP resume, including opaque ASCII handles (`cfth1:....`, `backend/task/123`) and `(server_profile_id, task_handle)` uniqueness. Unicode handles are stored verbatim and polled by omitting non-ASCII `Mcp-Name` (HTTP headers are Latin-1).
 
-**Auth:** fixture with `TASKDOCK_FIXTURE_TOKEN` rejected unauthenticated calls and accepted `Authorization: Bearer` from the client. Registry stored `env:TASKDOCK_AUTH_TOKEN`, not the token.
+**Auth:** fixture with `TASKDOCK_FIXTURE_TOKEN` rejected unauthenticated calls. A stored `authProfile` of `env:TASKDOCK_AUTH_TOKEN` resolved `process.env.TASKDOCK_AUTH_TOKEN` at call time. The token itself is not in SQLite.
 
 ## What failed
 
@@ -57,6 +57,10 @@ A spec-compliant `io.modelcontextprotocol/tasks` server lets Client B resume Cli
 
 **Different credentials.** Untested. Spec requires the server to authz each `tasks/get`. Client B used the same env token as Client A when auth was on.
 
+**No third-party Tasks server.** Every PASS used this repo's fixture. "Spec-compliant" here means the 2026-07-28 schema as implemented in `fixtures/test-task-server`.
+
+**`input_required` / `tasks/update`.** Not implemented on the fixture. `pollUntilTerminal` would wait until timeout if a task entered that state.
+
 ## Required state for task resume
 
 | State           | Required? | Why |
@@ -67,7 +71,7 @@ A spec-compliant `io.modelcontextprotocol/tasks` server lets Client B resume Cli
 | original client | no        | Experiment E used `client-a` then `client-b`. |
 | credentials     | yes*      | Server MUST authz. TaskDock does not store them. *Same identity may be required; task IDs MAY also be bearer tokens. |
 | request ID      | no        | JSON-RPC ids are per-request. |
-| connection      | no        | Each call is a new HTTP POST. |
+| connection      | no        | 2026-07-28 has no connection affinity. Proven by separate-process E/F/G. In-process POSTs may still share TCP keep-alive. |
 
 ## Cross-client test
 
@@ -114,7 +118,6 @@ td_01
 server: demo
 task: task_9935b3228997e8a3
 
-Opening NEW MCP connection...
 Opening fresh MCP connection
 Using task handle task_9935b3228997e8a3
 

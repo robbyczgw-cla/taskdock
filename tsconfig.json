@@ -10,6 +10,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "rootDir": ".",
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true

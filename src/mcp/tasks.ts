@@ -32,6 +32,11 @@ export async function getTask(
     { taskId },
     options,
   );
+  if (result.resultType && result.resultType !== "complete") {
+    throw new Error(
+      `expected GetTaskResult (resultType=complete), got: ${JSON.stringify(result)}`,
+    );
+  }
   return result;
 }
 

@@ -30,7 +30,6 @@ async function main(): Promise<void> {
   console.log(`sourceClient in registry: ${ref.record.sourceClient ?? "(none)"}`);
   console.log();
   console.log(`Loaded ${ref.id} from persistent TaskDock registry`);
-  console.log("Opening NEW MCP connection...");
   console.log("Opening fresh MCP connection");
   console.log(`Using task handle ${ref.taskHandle}`);
   console.log();
@@ -63,8 +62,6 @@ async function main(): Promise<void> {
     const text = result?.content?.[0]?.text ?? JSON.stringify(task.result);
     console.log("status: completed");
     console.log("Result:", text);
-    console.log("result:");
-    console.log(text);
   } else {
     console.log(`status: ${task.status}`);
     console.log(JSON.stringify(task, null, 2));

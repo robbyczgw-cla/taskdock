@@ -18,7 +18,6 @@ let nextId = 1;
 export type McpCallOptions = {
   client: ClientIdentity;
   authToken?: string;
-  sessionHeader?: string;
   extraHeaders?: Record<string, string>;
 };
 
@@ -84,9 +83,6 @@ export async function mcpCall<T = unknown>(
 
   const token = options.authToken ?? resolveAuthToken(profile);
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (options.sessionHeader) {
-    headers["X-Fixture-Session"] = options.sessionHeader;
-  }
 
   const res = await fetch(profile.transport.url, {
     method: "POST",

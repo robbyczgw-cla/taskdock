@@ -103,6 +103,18 @@ export class Registry {
   }
 
   register(input: RegisterTaskInput): TaskRecord {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const record = this.registerLocked(input);
+      this.db.exec("COMMIT");
+      return record;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  private registerLocked(input: RegisterTaskInput): TaskRecord {
     const server = this.getServer(input.serverProfileId);
     if (!server) {
       throw new Error(

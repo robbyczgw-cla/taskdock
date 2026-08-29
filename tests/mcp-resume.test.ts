@@ -215,8 +215,28 @@ test("opaque handle round-trip through MCP", async () => {
   }
 });
 
+test("unicode handle round-trips without Mcp-Name crash", async () => {
+  const fx = await startFixture({ binding: "independent" });
+  try {
+    const handle = "任务-äöü";
+    const created = await callToolTask(
+      fx.profile,
+      "slow_echo",
+      { message: "unicode", delayMs: 50, handle },
+      { client },
+    );
+    assert.equal(created.taskId, handle);
+    const done = await pollUntilTerminal(fx.profile, handle, { client });
+    assert.equal(done.taskId, handle);
+    assert.equal(done.status, "completed");
+  } finally {
+    await fx.stop();
+  }
+});
+
 test("auth token required when fixture is locked", async () => {
   const fx = await startFixture({ token: "secret-token" });
+  const previous = process.env.TASKDOCK_AUTH_TOKEN;
   try {
     await assert.rejects(
       () =>
@@ -228,14 +248,17 @@ test("auth token required when fixture is locked", async () => {
         ),
       /unauthorized|MCP/,
     );
+    process.env.TASKDOCK_AUTH_TOKEN = "secret-token";
     const created = await callToolTask(
       fx.profile,
       "slow_echo",
       { message: "ok", delayMs: 10 },
-      { client, authToken: "secret-token" },
+      { client },
     );
     assert.equal(created.resultType, "task");
   } finally {
+    if (previous === undefined) delete process.env.TASKDOCK_AUTH_TOKEN;
+    else process.env.TASKDOCK_AUTH_TOKEN = previous;
     await fx.stop();
   }
 });

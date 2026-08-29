@@ -5,23 +5,33 @@ import { connect, getTask, pollUntilTerminal } from "./mcp/client.ts";
 import { McpRpcError } from "./mcp/transport.ts";
 import { PROTOCOL_VERSION, TASKS_EXTENSION_VERSION } from "./mcp/meta.ts";
 
+class UsageError extends Error {
+  constructor() {
+    super("usage");
+    this.name = "UsageError";
+  }
+}
+
 function usage(): never {
+  throw new UsageError();
+}
+
+function printUsage(): void {
   console.log(`taskdock — experimental MCP task registry
 
 Usage:
-  taskdock server add <id> --http <url> [--auth env:VAR]
-  taskdock server list
-  taskdock register --server <id> --task <handle> [--source-client <name>] [--status <status>]
-  taskdock list
-  taskdock show <id>
-  taskdock poll <id>
-  taskdock resume <id>
+  npx tsx src/cli.ts server add <id> --http <url> [--auth env:VAR]
+  npx tsx src/cli.ts server list
+  npx tsx src/cli.ts register --server <id> --task <handle> [--source-client <name>] [--status <status>]
+  npx tsx src/cli.ts list
+  npx tsx src/cli.ts show <id>
+  npx tsx src/cli.ts poll <id>
+  npx tsx src/cli.ts resume <id>
 
 Env:
   TASKDOCK_DB                 SQLite path (default ./data/taskdock.sqlite)
   TASKDOCK_AUTH_TOKEN         used when server authProfile is env:TASKDOCK_AUTH_TOKEN
 `);
-  process.exit(2);
 }
 
 function flag(args: string[], name: string): string | undefined {
@@ -56,7 +66,11 @@ function printTable(rows: string[][]): void {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  if (argv.length === 0 || has(argv, "-h") || has(argv, "--help")) usage();
+  if (argv.length === 0 || has(argv, "-h") || has(argv, "--help")) {
+    printUsage();
+    process.exitCode = 2;
+    return;
+  }
 
   const dock = new TaskDock();
   const cmd = argv[0];
@@ -184,6 +198,13 @@ async function main(): Promise<void> {
     }
 
     usage();
+  } catch (err) {
+    if (err instanceof UsageError) {
+      printUsage();
+      process.exitCode = 2;
+      return;
+    }
+    throw err;
   } finally {
     dock.close();
   }
@@ -191,5 +212,5 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
+  process.exitCode = 1;
 });

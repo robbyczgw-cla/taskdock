@@ -96,9 +96,18 @@ export async function startFixture(opts: {
       authProfile: opts.token ? "env:TASKDOCK_AUTH_TOKEN" : undefined,
     },
     stop: async () => {
+      if (proc.exitCode !== null || proc.signalCode !== null) return;
       proc.kill("SIGTERM");
-      await new Promise((r) => setTimeout(r, 100));
-      if (!proc.killed) proc.kill("SIGKILL");
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          proc.kill("SIGKILL");
+          resolve();
+        }, 500);
+        proc.once("exit", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
     },
   };
 }

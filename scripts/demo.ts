@@ -102,13 +102,17 @@ async function main(): Promise<void> {
       TASKDOCK_DELAY_MS: "2500",
       TASKDOCK_MESSAGE: "hello",
     });
-    if (a.code !== 0) process.exit(a.code);
+    if (a.code !== 0) {
+      process.exitCode = a.code;
+      return;
+    }
 
     const idMatch = a.stdout.match(/TaskDock ID:\n(td_\d+)/);
     const id = idMatch?.[1];
     if (!id) {
       console.error("could not parse TaskDock id from client-a");
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     console.log();
@@ -118,8 +122,7 @@ async function main(): Promise<void> {
     const b = await run(["src/clients/client-b.ts", id], {
       TASKDOCK_DB: db,
     });
-    fixture.kill("SIGTERM");
-    process.exit(b.code);
+    process.exitCode = b.code;
   } finally {
     fixture.kill("SIGTERM");
   }
@@ -127,5 +130,5 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   console.error(err);
-  process.exit(1);
+  process.exitCode = 1;
 });

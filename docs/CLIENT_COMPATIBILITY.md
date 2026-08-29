@@ -36,4 +36,16 @@ Not testable today. [#5683](https://github.com/IBM/mcp-context-forge/issues/5683
 
 The protocol is ready. Production coding agents are not. The only ready interactive client for a modern Tasks server is MCP Inspector. TaskDock's first real users are custom clients, Inspector-adjacent workflows, and C#/Rust servers, until hosts ship the extension.
 
-That is a go-to-market constraint, not a protocol blocker. It also means no incumbent already occupies the "durable handoff" slot.
+That is a go-to-market constraint, not a protocol blocker. It also means no incumbent already occupies the durable-handoff slot.
+
+## Sources
+
+- Extension matrix (no Tasks column): https://modelcontextprotocol.io/extensions/client-matrix
+- SEP-2663: https://modelcontextprotocol.io/seps/2663-tasks-extension
+- ext-tasks: https://github.com/modelcontextprotocol/ext-tasks
+- Codex capability allow-list: https://github.com/openai/codex/blob/main/codex-rs/codex-mcp/src/client_capabilities.rs
+- VS Code `McpTaskManager`: https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/mcp/common/mcpTaskManager.ts
+- mcpc (2025-11-25 only): https://github.com/apify/mcpc
+- ContextForge Tasks issue: https://github.com/IBM/mcp-context-forge/issues/5683
+- TS SDK SEP-2663: https://github.com/modelcontextprotocol/typescript-sdk/issues/2189
+- Inspector: https://github.com/modelcontextprotocol/inspector

@@ -17,7 +17,7 @@ or a proprietary Client-A session store?
 
 ## Verdict
 
-**BUILD** a minimal CLI. Evidence: [docs/SPIKE_RESULTS.md](docs/SPIKE_RESULTS.md).
+**BUILD.** Keep the local CLI. Do not grow it into a product. Evidence: [docs/SPIKE_RESULTS.md](docs/SPIKE_RESULTS.md).
 
 On a spec-compliant Tasks server, Client B resumes Client A's task
 from SQLite alone. TaskDock does not run the work. Production coding
@@ -49,11 +49,13 @@ npm run client-b -- td_01
 the stored handle. TaskDock does not proxy the task.
 
 ```bash
-npx tsx src/cli.ts server add demo --http http://127.0.0.1:3333/mcp
-npx tsx src/cli.ts register --server demo --task <handle> --source-client client-a
-npx tsx src/cli.ts list
-npx tsx src/cli.ts resume td_01
+npm run taskdock -- server add demo --http http://127.0.0.1:3333/mcp
+npm run taskdock -- register --server demo --task <handle> --source-client client-a
+npm run taskdock -- list
+npm run taskdock -- resume td_01
 ```
+
+There is no installed `taskdock` binary. Use `npm run taskdock -- ...` or `npx tsx src/cli.ts ...`. `td_01` is the first id on a fresh registry file.
 
 ## Layout
 

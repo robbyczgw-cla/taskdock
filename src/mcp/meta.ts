@@ -22,6 +22,11 @@ export function requestMeta(client: ClientIdentity): Record<string, unknown> {
   };
 }
 
+/** HTTP header values must be Latin-1. Opaque taskIds are not. */
+export function asciiHeaderSafe(value: string): boolean {
+  return /^[\x20-\x7E]*$/.test(value);
+}
+
 export function tasksCapabilityHeaders(
   method: string,
   params: Record<string, unknown> | undefined,
@@ -32,10 +37,18 @@ export function tasksCapabilityHeaders(
     Accept: "application/json, text/event-stream",
     "Content-Type": "application/json",
   };
-  if (method === "tools/call" && typeof params?.name === "string") {
+  if (
+    method === "tools/call" &&
+    typeof params?.name === "string" &&
+    asciiHeaderSafe(params.name)
+  ) {
     headers["Mcp-Name"] = params.name;
   }
-  if (method.startsWith("tasks/") && typeof params?.taskId === "string") {
+  if (
+    method.startsWith("tasks/") &&
+    typeof params?.taskId === "string" &&
+    asciiHeaderSafe(params.taskId)
+  ) {
     headers["Mcp-Name"] = params.taskId;
   }
   return headers;

@@ -17,7 +17,7 @@ export type ConnectedClient = {
 export async function connect(
   profile: ServerProfile,
   client: ClientIdentity,
-  extras?: { authToken?: string; sessionHeader?: string },
+  extras?: { authToken?: string },
 ): Promise<ConnectedClient> {
   const discovered = await discover(profile, { client, ...extras });
   return {
