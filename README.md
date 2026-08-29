@@ -19,9 +19,13 @@ or a proprietary Client-A session store?
 
 **BUILD.** Keep the local CLI. Do not grow it into a product. Evidence: [docs/SPIKE_RESULTS.md](docs/SPIKE_RESULTS.md).
 
-On a Tasks server that keeps handles outside the MCP connection,
-Client B resumes Client A's task from SQLite alone. TaskDock does not
-run the work. Production coding agents do not speak this extension yet.
+Phase 1: this repo's fixture. Phase 2: official `rmcp` 3.1.4 TaskDemo.
+Client B resumes from SQLite alone. TaskDock does not run the work.
+
+```bash
+docker compose -f examples/rmcp-task-server/docker-compose.yml up --build
+npm run interop
+```
 
 ## Quick start
 
@@ -66,5 +70,6 @@ There is no installed `taskdock` binary. Use `npm run taskdock -- ...` or `npx t
 ## Docs
 
 - [Spike results](docs/SPIKE_RESULTS.md)
+- [Third-party interop](docs/INTEROP_RESULTS.md)
 - [Protocol notes](docs/PROTOCOL_NOTES.md)
 - [Client compatibility](docs/CLIENT_COMPATIBILITY.md)

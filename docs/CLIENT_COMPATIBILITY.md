@@ -1,6 +1,6 @@
 # Client compatibility
 
-Survey date: 2026-08-29. Public docs and source only. Closed-source hosts that do not document Tasks are scored `no` on native support, `UNKNOWN` on hidden internals.
+Survey date: 2026-08-29, refreshed the same day for Phase 2. Public docs, crates.io, and a live `rmcp` 3.1.4 server. Closed-source hosts that do not document Tasks are scored `no` on native support, `UNKNOWN` on hidden internals.
 
 Modern Tasks means `io.modelcontextprotocol/tasks`, `resultType: "task"`, `tasks/get`. Legacy 2025-11-25 Tasks (`params.task`, `tasks/result`, `tasks/list`) does not count.
 
@@ -19,8 +19,8 @@ Modern Tasks means `io.modelcontextprotocol/tasks`, `resultType: "task"`, `tasks
 | MCP Inspector | yes | yes | no | no | Only interactive client found. Works around SDK v2 rejecting `resultType: "task"`. Handles live in that Inspector session. |
 | TS SDK v2 | no | no | no | no | [#2189](https://github.com/modelcontextprotocol/typescript-sdk/issues/2189) open. Codec rejects the wire. |
 | Python SDK v2 | no | no | no | no | Docs: extension not implemented. |
-| C# SDK | library | library | n/a | n/a | `ModelContextProtocol.Extensions.Tasks`. |
-| Rust SDK `rmcp` | library | library | n/a | n/a | `enable_tasks()`, `get_task`. |
+| C# SDK | library | library | n/a | n/a | `ModelContextProtocol.Extensions.Tasks`. Not used for Phase 2 (no host `dotnet`). |
+| Rust SDK `rmcp` | yes (server) | yes | yes* | yes* | crates.io 3.1.4. `TaskManager` + official TaskDemo. Phase 2 Experiment I PASS over Streamable HTTP in Docker. *Resume is TaskDock Client B, not an rmcp client. |
 
 ## Failure D
 
@@ -34,7 +34,7 @@ Not testable today. [#5683](https://github.com/IBM/mcp-context-forge/issues/5683
 
 ## What this means
 
-The protocol is ready. Production coding agents are not. The only ready interactive client for a modern Tasks server is MCP Inspector. TaskDock's first real users are custom clients, Inspector-adjacent workflows, and C#/Rust servers, until hosts ship the extension.
+The protocol is ready. Official `rmcp` 3.1.4 is a usable third-party Tasks *server*. Production coding agents still do not speak the extension as Client A. MCP Inspector remains the only known interactive client.
 
 That is a go-to-market constraint, not a protocol blocker. It also means no incumbent already occupies the durable-handoff slot.
 

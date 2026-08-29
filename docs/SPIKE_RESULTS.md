@@ -6,7 +6,9 @@
 BUILD
 ```
 
-A Tasks server that keeps handles outside the MCP connection lets Client B resume Client A's work from a SQLite row: server profile, opaque handle, and Client B's own credentials. TaskDock never ran the task. The protocol removed `tasks/list` on purpose, so durable discovery is not something hosts already provide. The fixture covers the exercised `tools/call` → `tasks/get` path, not the full 2026-07-28 surface.
+A Tasks server that keeps handles outside the MCP connection lets Client B resume Client A's work from a SQLite row: server profile, opaque handle, and Client B's own credentials. TaskDock never ran the task. The protocol removed `tasks/list` on purpose, so durable discovery is not something hosts already provide.
+
+Phase 1 used this repo's fixture. Phase 2 repeated the same resume against official `rmcp` 3.1.4. See [INTEROP_RESULTS.md](INTEROP_RESULTS.md).
 
 ## Executive Summary
 
