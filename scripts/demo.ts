@@ -118,6 +118,7 @@ async function main(): Promise<void> {
     const b = await run(["src/clients/client-b.ts", id], {
       TASKDOCK_DB: db,
     });
+    fixture.kill("SIGTERM");
     process.exit(b.code);
   } finally {
     fixture.kill("SIGTERM");
