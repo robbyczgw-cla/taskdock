@@ -177,6 +177,7 @@ async function handleRpc(
       res,
       200,
       jsonrpcResult(id, {
+        resultType: "complete",
         supportedVersions: ["2026-07-28"],
         capabilities: {
           tools: {},
@@ -201,6 +202,7 @@ async function handleRpc(
       res,
       200,
       jsonrpcResult(id, {
+        resultType: "complete",
         tools: TOOLS,
         ttlMs: 0,
         cacheScope: "public",
@@ -372,8 +374,11 @@ server.listen(PORT, "127.0.0.1", () => {
   );
 });
 
-process.on("SIGINT", () => {
+function shutdown(): void {
   store.close();
-  server.close();
-  process.exit(0);
-});
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 500).unref();
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

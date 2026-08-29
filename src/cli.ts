@@ -66,7 +66,12 @@ function printTable(rows: string[][]): void {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  if (argv.length === 0 || has(argv, "-h") || has(argv, "--help")) {
+  if (has(argv, "-h") || has(argv, "--help")) {
+    printUsage();
+    process.exitCode = 0;
+    return;
+  }
+  if (argv.length === 0) {
     printUsage();
     process.exitCode = 2;
     return;

@@ -6,7 +6,7 @@
 BUILD
 ```
 
-A spec-compliant `io.modelcontextprotocol/tasks` server lets Client B resume Client A's work from a SQLite row: server profile, opaque handle, and Client B's own credentials. TaskDock never ran the task. The protocol removed `tasks/list` on purpose, so durable discovery is not something hosts already provide.
+A Tasks server that keeps handles outside the MCP connection lets Client B resume Client A's work from a SQLite row: server profile, opaque handle, and Client B's own credentials. TaskDock never ran the task. The protocol removed `tasks/list` on purpose, so durable discovery is not something hosts already provide. The fixture covers the exercised `tools/call` → `tasks/get` path, not the full 2026-07-28 surface.
 
 ## Executive Summary
 
@@ -15,7 +15,7 @@ A spec-compliant `io.modelcontextprotocol/tasks` server lets Client B resume Cli
 - Experiments A–H on a controlled fixture: all PASS for connection-independent (Mode A) servers.
 - Mode B (session-bound server) fails resume on a new connection. That is a server bug relative to the spec, and a real deployment risk.
 - Client A ≠ Client B works when they are independent processes that share only the registry file and server URL.
-- TaskDock does not store secrets. `authProfile` is `env:TASKDOCK_AUTH_TOKEN`.
+- TaskDock stores no authentication credentials. `authProfile` is `env:TASKDOCK_AUTH_TOKEN`. Task handles may themselves be bearer secrets, so the SQLite file and CLI output need the same protection as a session token.
 - Official TS/Python SDKs reject this extension today. The spike speaks raw JSON-RPC.
 - No major coding-agent host ships modern Tasks as of 2026-08-29. MCP Inspector does. ContextForge does not (`tasks/get` is `-32601`).
 - Failure D is false: nothing surveyed is a vendor-neutral durable task inventory.
@@ -35,7 +35,7 @@ A spec-compliant `io.modelcontextprotocol/tasks` server lets Client B resume Cli
 | D new MCP session | PASS | new client name on a new POST. Weak alone (no session state exists). E/F/G are the real cross-process evidence. |
 | E different clients | PASS | `client-a.ts` then `client-b.ts`, completed `hello` |
 | F no runtime state | PASS | `taskdock resume` in a new process, completed `F` |
-| G other machine (dir copy) | PASS | copied only sqlite host→guest, completed `G` |
+| G other machine (dir copy) | PASS | copied sqlite (plus WAL if present) host→guest, completed `G` |
 | H bad handles | PASS | not found / expired / wrong server; rows kept; cancel → `cancelled` |
 | Mode B contrast | PASS | new connection → `Task not found in this session` |
 
