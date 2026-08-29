@@ -135,6 +135,78 @@ function createView(task: StoredTask) {
   };
 }
 
+function headerValue(req: IncomingMessage, name: string): string | undefined {
+  const raw = req.headers[name.toLowerCase()];
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw) && typeof raw[0] === "string") return raw[0];
+  return undefined;
+}
+
+function decodeMcpHeader(value: string): string {
+  if (value.startsWith("=?base64?") && value.endsWith("?=")) {
+    return Buffer.from(value.slice("=?base64?".length, -2), "base64").toString(
+      "utf8",
+    );
+  }
+  return value;
+}
+
+function headerMismatch(
+  res: ServerResponse,
+  id: unknown,
+  message: string,
+): void {
+  send(res, 400, jsonrpcError(id, -32020, message));
+}
+
+function checkMirroredHeaders(
+  req: IncomingMessage,
+  res: ServerResponse,
+  id: unknown,
+  method: string,
+  params: Record<string, unknown>,
+): boolean {
+  const protocol = headerValue(req, "mcp-protocol-version");
+  if (protocol !== "2026-07-28") {
+    headerMismatch(
+      res,
+      id,
+      `Header mismatch: MCP-Protocol-Version ${JSON.stringify(protocol)}`,
+    );
+    return false;
+  }
+  const mcpMethod = headerValue(req, "mcp-method");
+  if (mcpMethod !== method) {
+    headerMismatch(
+      res,
+      id,
+      `Header mismatch: Mcp-Method ${JSON.stringify(mcpMethod)} !== ${JSON.stringify(method)}`,
+    );
+    return false;
+  }
+  if (method === "tools/call" || method.startsWith("tasks/")) {
+    const rawName = headerValue(req, "mcp-name");
+    if (rawName === undefined) {
+      headerMismatch(res, id, "Header mismatch: Mcp-Name is required");
+      return false;
+    }
+    const decoded = decodeMcpHeader(rawName);
+    const expected =
+      method === "tools/call"
+        ? String(params.name ?? "")
+        : String(params.taskId ?? "");
+    if (decoded !== expected) {
+      headerMismatch(
+        res,
+        id,
+        `Header mismatch: Mcp-Name ${JSON.stringify(decoded)} !== ${JSON.stringify(expected)}`,
+      );
+      return false;
+    }
+  }
+  return true;
+}
+
 function checkAuth(req: IncomingMessage): string | undefined {
   if (!AUTH_TOKEN) return undefined;
   const header = req.headers.authorization;
@@ -169,6 +241,10 @@ async function handleRpc(
   const authErr = checkAuth(req);
   if (authErr) {
     send(res, 401, jsonrpcError(id, -32001, "unauthorized"));
+    return;
+  }
+
+  if (!checkMirroredHeaders(req, res, id, method, params)) {
     return;
   }
 

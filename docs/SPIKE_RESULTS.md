@@ -39,7 +39,7 @@ A Tasks server that keeps handles outside the MCP connection lets Client B resum
 | H bad handles | PASS | not found / expired / wrong server; rows kept; cancel → `cancelled` |
 | Mode B contrast | PASS | new connection → `Task not found in this session` |
 
-**Tests:** 6 registry + 9 MCP resume, including opaque ASCII handles (`cfth1:....`, `backend/task/123`) and `(server_profile_id, task_handle)` uniqueness. Unicode handles are stored verbatim and polled by omitting non-ASCII `Mcp-Name` (HTTP headers are Latin-1).
+**Tests:** 6 registry + 10 MCP resume + header encoding tests. Opaque handles (`cfth1:....`, `backend/task/123`, unicode) are stored verbatim. Non-ASCII `taskId` values go on `Mcp-Name` as `=?base64?...?=`, per Streamable HTTP 2026-07-28. The fixture rejects missing or mismatched `Mcp-Name`.
 
 **Auth:** fixture with `TASKDOCK_FIXTURE_TOKEN` rejected unauthenticated calls. A stored `authProfile` of `env:TASKDOCK_AUTH_TOKEN` resolved `process.env.TASKDOCK_AUTH_TOKEN` at call time. The token itself is not in SQLite.
 
@@ -151,7 +151,7 @@ The category is empty. The clients that would fill TaskDock's registry are late.
 
 ## Architectural blockers
 
-None for spec-compliant 2026-07-28 Tasks servers.
+None for a 2026-07-28 Tasks server that stores handles independently of the MCP connection. The fixture covers the exercised `tools/call` → `tasks/get` path, not the full spec.
 
 Real constraints, not blockers:
 

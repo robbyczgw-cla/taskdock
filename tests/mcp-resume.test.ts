@@ -215,7 +215,7 @@ test("opaque handle round-trip through MCP", async () => {
   }
 });
 
-test("unicode handle round-trips without Mcp-Name crash", async () => {
+test("unicode handle round-trips with Base64 Mcp-Name sentinel", async () => {
   const fx = await startFixture({ binding: "independent" });
   try {
     const handle = "任务-äöü";

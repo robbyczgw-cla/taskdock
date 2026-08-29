@@ -35,7 +35,7 @@ There is no `tasks/list`. The spec says that on purpose: one caller's tasks must
 
 TaskDock stores the string verbatim. It never parses `:`, `/`, `+`, `=`, unicode, or length.
 
-For Streamable HTTP, `Mcp-Name` on `tasks/*` SHOULD be `params.taskId` so intermediaries can route. HTTP header values are Latin-1. This client copies the handle into `Mcp-Name` only when it is ASCII (`0x20-0x7E`). Non-ASCII handles still go in the JSON-RPC body, which is the source of truth. Intermediaries that route only on `Mcp-Name` will not stick those requests.
+For Streamable HTTP, `Mcp-Name` on `tasks/get`, `tasks/update`, and `tasks/cancel` MUST be `params.taskId`. Values that are not plain ASCII (or that have leading/trailing whitespace, or that match the sentinel pattern) MUST use `=?base64?{utf8-base64}?=`. The JSON-RPC body remains the source of truth. Servers decode the header before comparing it to the body.
 
 `tasks/update` and `input_required` are specified but not implemented in this spike. The fixture returns `-32601` for `tasks/update`.
 

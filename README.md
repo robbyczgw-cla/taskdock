@@ -19,9 +19,9 @@ or a proprietary Client-A session store?
 
 **BUILD.** Keep the local CLI. Do not grow it into a product. Evidence: [docs/SPIKE_RESULTS.md](docs/SPIKE_RESULTS.md).
 
-On a spec-compliant Tasks server, Client B resumes Client A's task
-from SQLite alone. TaskDock does not run the work. Production coding
-agents do not speak this extension yet.
+On a Tasks server that keeps handles outside the MCP connection,
+Client B resumes Client A's task from SQLite alone. TaskDock does not
+run the work. Production coding agents do not speak this extension yet.
 
 ## Quick start
 

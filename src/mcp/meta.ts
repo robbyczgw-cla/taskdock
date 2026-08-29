@@ -22,9 +22,46 @@ export function requestMeta(client: ClientIdentity): Record<string, unknown> {
   };
 }
 
-/** HTTP header values must be Latin-1. Opaque taskIds are not. */
-export function asciiHeaderSafe(value: string): boolean {
-  return /^[\x20-\x7E]*$/.test(value);
+/**
+ * Streamable HTTP value encoding (2026-07-28).
+ * Unsafe values use =?base64?{utf8-base64}?=
+ */
+const BASE64_SENTINEL_PREFIX = "=?base64?";
+const BASE64_SENTINEL_SUFFIX = "?=";
+
+export function isPlainMcpHeaderValue(value: string): boolean {
+  if (
+    value.startsWith(BASE64_SENTINEL_PREFIX) &&
+    value.endsWith(BASE64_SENTINEL_SUFFIX)
+  ) {
+    return false;
+  }
+  if (value !== value.trim()) return false;
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    if (c === 0x09 || c === 0x20 || (c >= 0x21 && c <= 0x7e)) continue;
+    return false;
+  }
+  return true;
+}
+
+export function encodeMcpHeaderValue(value: string): string {
+  if (isPlainMcpHeaderValue(value)) return value;
+  return `${BASE64_SENTINEL_PREFIX}${Buffer.from(value, "utf8").toString("base64")}${BASE64_SENTINEL_SUFFIX}`;
+}
+
+export function decodeMcpHeaderValue(value: string): string {
+  if (
+    value.startsWith(BASE64_SENTINEL_PREFIX) &&
+    value.endsWith(BASE64_SENTINEL_SUFFIX)
+  ) {
+    const b64 = value.slice(
+      BASE64_SENTINEL_PREFIX.length,
+      value.length - BASE64_SENTINEL_SUFFIX.length,
+    );
+    return Buffer.from(b64, "base64").toString("utf8");
+  }
+  return value;
 }
 
 export function tasksCapabilityHeaders(
@@ -37,19 +74,11 @@ export function tasksCapabilityHeaders(
     Accept: "application/json, text/event-stream",
     "Content-Type": "application/json",
   };
-  if (
-    method === "tools/call" &&
-    typeof params?.name === "string" &&
-    asciiHeaderSafe(params.name)
-  ) {
-    headers["Mcp-Name"] = params.name;
+  if (method === "tools/call" && typeof params?.name === "string") {
+    headers["Mcp-Name"] = encodeMcpHeaderValue(params.name);
   }
-  if (
-    method.startsWith("tasks/") &&
-    typeof params?.taskId === "string" &&
-    asciiHeaderSafe(params.taskId)
-  ) {
-    headers["Mcp-Name"] = params.taskId;
+  if (method.startsWith("tasks/") && typeof params?.taskId === "string") {
+    headers["Mcp-Name"] = encodeMcpHeaderValue(params.taskId);
   }
   return headers;
 }
