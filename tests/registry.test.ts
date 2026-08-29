@@ -128,7 +128,7 @@ test("removeServer fails while tasks exist", () => {
     transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
   });
   dock.register({ serverProfileId: "demo", taskHandle: "h1" });
-  assert.throws(() => dock.removeServer("demo"), /task/i);
+  assert.throws(() => dock.removeServer("demo"), /still reference/);
   assert.equal(dock.getServer("demo")?.id, "demo");
   assert.equal(dock.list().length, 1);
   dock.close();
@@ -161,46 +161,5 @@ test("label round-trips", () => {
   });
   assert.equal(rec.label, "review-pr");
   assert.equal(dock.show(rec.id).label, "review-pr");
-  dock.close();
-});
-
-test("removeServer fails while tasks exist", () => {
-  const dock = new TaskDock(tempDb());
-  dock.addServer({
-    id: "demo",
-    name: "demo",
-    transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
-  });
-  dock.register({ serverProfileId: "demo", taskHandle: "h" });
-  assert.throws(() => dock.removeServer("demo"), /still reference/);
-  dock.close();
-});
-
-test("removeServer succeeds with no tasks", () => {
-  const dock = new TaskDock(tempDb());
-  dock.addServer({
-    id: "demo",
-    name: "demo",
-    transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
-  });
-  dock.removeServer("demo");
-  assert.equal(dock.getServer("demo"), undefined);
-  dock.close();
-});
-
-test("label round-trips", () => {
-  const dock = new TaskDock(tempDb());
-  dock.addServer({
-    id: "demo",
-    name: "demo",
-    transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
-  });
-  const rec = dock.register({
-    serverProfileId: "demo",
-    taskHandle: "h",
-    label: "nightly",
-  });
-  assert.equal(rec.label, "nightly");
-  assert.equal(dock.show(rec.id).label, "nightly");
   dock.close();
 });

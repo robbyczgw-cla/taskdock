@@ -49,7 +49,7 @@ repo's fixture server. The constraint is upstream: modern Tasks is still rare
 on coding agents, so most Client A roles today are custom code, MCP Inspector,
 or the bundled demo clients rather than your usual agent.
 
-No license chosen yet.
+MIT License. See [LICENSE](LICENSE).
 
 ## Install
 
@@ -249,8 +249,7 @@ copies.
 handle as of 2026-08-29. Until that changes, you are registering handles from
 your own code, from MCP Inspector, or from these demo clients.
 
-**No license yet.** Nothing here grants you rights to use this. That is
-unresolved, not an oversight.
+**License.** MIT. See [LICENSE](LICENSE).
 
 ## Development
 
