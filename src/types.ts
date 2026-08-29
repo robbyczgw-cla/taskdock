@@ -35,6 +35,7 @@ export type TaskRecord = {
   lastSeenAt: string;
   status?: string;
   sourceClient?: string;
+  label?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -42,6 +43,7 @@ export type RegisterTaskInput = {
   serverProfileId: string;
   taskHandle: string;
   sourceClient?: string;
+  label?: string;
   status?: string;
   protocolVersion?: string;
   taskExtensionVersion?: string;

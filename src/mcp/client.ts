@@ -1,7 +1,7 @@
-import type { ServerProfile } from "../types.ts";
-import { discover } from "./transport.ts";
-import type { ClientIdentity } from "./meta.ts";
-import { callToolTask, getTask, pollUntilTerminal } from "./tasks.ts";
+import type { ServerProfile } from "../types.js";
+import { discover } from "./transport.js";
+import type { ClientIdentity } from "./meta.js";
+import { callToolTask, getTask, pollUntilTerminal } from "./tasks.js";
 
 export type ConnectedClient = {
   profile: ServerProfile;
@@ -41,7 +41,11 @@ export function identityWarning(
     (typeof recName === "string" && typeof curName === "string" && recName !== curName) ||
     (typeof recVer === "string" && typeof curVer === "string" && recVer !== curVer)
   ) {
-    return `WARNING: server identity differs from the server that created this task (recorded ${JSON.stringify(recorded)} vs current ${JSON.stringify(current)})`;
+    return [
+      "warning: server identity differs from the server observed when this task was registered",
+      `recorded: ${recName ?? "?"} ${recVer ?? ""}`.trimEnd(),
+      `current:  ${curName ?? "?"} ${curVer ?? ""}`.trimEnd(),
+    ].join("\n");
   }
   return undefined;
 }

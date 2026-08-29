@@ -2,8 +2,8 @@
  * Client B: load a TaskDock record and resume via a NEW MCP connection.
  * Must not import client-a. Must not reuse an open connection.
  */
-import { TaskDock } from "../taskdock.ts";
-import { connect, identityWarning, pollUntilTerminal } from "../mcp/client.ts";
+import { TaskDock } from "../taskdock.js";
+import { connect, identityWarning, pollUntilTerminal } from "../mcp/client.js";
 
 const id = process.argv[2] ?? process.env.TASKDOCK_ID;
 

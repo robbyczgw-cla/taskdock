@@ -1,4 +1,4 @@
-import type { ServerProfile, Transport } from "../types.ts";
+import type { ServerProfile, Transport } from "../types.js";
 
 export function parseTransport(args: {
   http?: string;

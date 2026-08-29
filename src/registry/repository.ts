@@ -21,6 +21,7 @@ type TaskRow = {
   extension_version: string | null;
   status: string | null;
   source_client: string | null;
+  label?: string | null;
   created_at: string;
   last_seen_at: string;
   metadata_json: string | null;
@@ -44,6 +45,7 @@ function taskFromRow(row: TaskRow): TaskRecord {
     taskExtensionVersion: row.extension_version ?? undefined,
     status: row.status ?? undefined,
     sourceClient: row.source_client ?? undefined,
+    label: row.label ?? undefined,
     createdAt: row.created_at,
     lastSeenAt: row.last_seen_at,
     metadata: row.metadata_json
@@ -102,6 +104,22 @@ export class Registry {
     return rows.map(profileFromRow);
   }
 
+  removeServer(id: string): void {
+    const server = this.getServer(id);
+    if (!server) {
+      throw new Error(`Unknown server profile: ${id}`);
+    }
+    const n = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM tasks WHERE server_profile_id = ?`)
+      .get(id) as { n: number };
+    if (n.n > 0) {
+      throw new Error(
+        `Cannot remove server ${id}: ${n.n} task(s) still reference it`,
+      );
+    }
+    this.db.prepare(`DELETE FROM server_profiles WHERE id = ?`).run(id);
+  }
+
   register(input: RegisterTaskInput): TaskRecord {
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -139,6 +157,7 @@ export class Registry {
              last_seen_at = ?,
              status = COALESCE(?, status),
              source_client = COALESCE(?, source_client),
+             label = COALESCE(?, label),
              protocol_version = COALESCE(?, protocol_version),
              extension_version = COALESCE(?, extension_version),
              metadata_json = COALESCE(?, metadata_json)
@@ -148,6 +167,7 @@ export class Registry {
           now,
           input.status ?? null,
           input.sourceClient ?? null,
+          input.label ?? null,
           input.protocolVersion ?? null,
           input.taskExtensionVersion ?? null,
           input.metadata ? JSON.stringify(input.metadata) : null,
@@ -161,9 +181,9 @@ export class Registry {
       .prepare(
         `INSERT INTO tasks (
            id, task_handle, server_profile_id,
-           protocol_version, extension_version, status, source_client,
+           protocol_version, extension_version, status, source_client, label,
            created_at, last_seen_at, metadata_json
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -173,6 +193,7 @@ export class Registry {
         input.taskExtensionVersion ?? null,
         input.status ?? null,
         input.sourceClient ?? null,
+        input.label ?? null,
         now,
         now,
         input.metadata ? JSON.stringify(input.metadata) : null,

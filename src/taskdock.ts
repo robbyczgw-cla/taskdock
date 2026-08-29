@@ -1,11 +1,11 @@
-import { openDatabase, type Database } from "./registry/db.ts";
-import { Registry } from "./registry/repository.ts";
+import { defaultDbPath, openDatabase, type Database } from "./registry/db.js";
+import { Registry } from "./registry/repository.js";
 import type {
   RegisterTaskInput,
   ServerProfile,
   TaskRecord,
   TaskRef,
-} from "./types.ts";
+} from "./types.js";
 
 /** Tiny library API. Does not open MCP connections. */
 export class TaskDock {
@@ -14,8 +14,9 @@ export class TaskDock {
   readonly dbPath: string;
 
   constructor(dbPath?: string) {
-    this.db = openDatabase(dbPath);
-    this.dbPath = dbPath ?? process.env.TASKDOCK_DB ?? "(default)";
+    const resolved = dbPath ?? defaultDbPath();
+    this.dbPath = resolved;
+    this.db = openDatabase(resolved);
     this.registry = new Registry(this.db);
   }
 
@@ -31,18 +32,24 @@ export class TaskDock {
     return this.registry.getServer(id);
   }
 
+  removeServer(id: string): void {
+    this.registry.removeServer(id);
+  }
+
+  show(id: string): TaskRecord {
+    const record = this.registry.get(id);
+    if (!record) {
+      throw new Error(`Unknown TaskDock id: ${id}`);
+    }
+    return record;
+  }
+
   register(input: RegisterTaskInput): TaskRecord {
     return this.registry.register(input);
   }
 
   list(): TaskRecord[] {
     return this.registry.list();
-  }
-
-  show(id: string): TaskRecord {
-    const record = this.registry.get(id);
-    if (!record) throw new Error(`Unknown TaskDock id: ${id}`);
-    return record;
   }
 
   resolve(id: string): TaskRef {

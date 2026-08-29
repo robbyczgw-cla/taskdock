@@ -1,5 +1,5 @@
-import type { McpTask, ServerProfile } from "../types.ts";
-import { mcpCall, type McpCallOptions } from "./transport.ts";
+import type { McpTask, ServerProfile } from "../types.js";
+import { mcpCall, type McpCallOptions } from "./transport.js";
 
 export async function callToolTask(
   profile: ServerProfile,
@@ -76,7 +76,8 @@ export async function pollUntilTerminal(
     if (
       task.status === "completed" ||
       task.status === "failed" ||
-      task.status === "cancelled"
+      task.status === "cancelled" ||
+      task.status === "input_required"
     ) {
       return task;
     }

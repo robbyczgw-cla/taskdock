@@ -2,10 +2,10 @@
  * Client A: start a long-running MCP task, register it with TaskDock, exit.
  * Shares no runtime with Client B. Persistence is SQLite only.
  */
-import { TaskDock } from "../taskdock.ts";
-import { connect, callToolTask } from "../mcp/client.ts";
-import { PROTOCOL_VERSION, TASKS_EXTENSION_VERSION } from "../mcp/meta.ts";
-import type { ServerProfile } from "../types.ts";
+import { TaskDock } from "../taskdock.js";
+import { connect, callToolTask } from "../mcp/client.js";
+import { PROTOCOL_VERSION, TASKS_EXTENSION_VERSION } from "../mcp/meta.js";
+import type { ServerProfile } from "../types.js";
 
 const url = process.env.TASKDOCK_SERVER_URL ?? "http://127.0.0.1:3333/mcp";
 const delayMs = Number(process.env.TASKDOCK_DELAY_MS ?? 4000);

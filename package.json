@@ -3,13 +3,32 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Experimental durable registry for MCP Tasks (io.modelcontextprotocol/tasks). Spike, not a product.",
+  "description": "Local durable registry for modern MCP Tasks",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/robbyczgw-cla/taskdock.git"
+  },
+  "keywords": ["mcp", "tasks", "cli"],
   "engines": {
     "node": ">=22"
   },
+  "bin": {
+    "taskdock": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "docs"],
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "taskdock": "tsx src/cli.ts",
-    "typecheck": "tsc --noEmit",
     "fixture-server": "tsx fixtures/test-task-server/server.ts",
     "client-a": "tsx src/clients/client-a.ts",
     "client-b": "tsx src/clients/client-b.ts",

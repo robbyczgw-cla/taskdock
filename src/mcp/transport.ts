@@ -1,5 +1,5 @@
-import type { JsonRpcResponse, ServerProfile } from "../types.ts";
-import { requestMeta, tasksCapabilityHeaders, type ClientIdentity } from "./meta.ts";
+import type { JsonRpcResponse, ServerProfile } from "../types.js";
+import { requestMeta, tasksCapabilityHeaders, type ClientIdentity } from "./meta.js";
 
 export class McpRpcError extends Error {
   constructor(
