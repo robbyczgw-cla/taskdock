@@ -8,3 +8,5 @@ data/
 .taskdock/
 scratch/
 docs/_research_*.md
+docs/_experiment_log.md
+docs/_review.md

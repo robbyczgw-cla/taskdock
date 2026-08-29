@@ -4,7 +4,7 @@
  * then runs client-b as a separate child against the same SQLite file.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:net";
 
@@ -67,6 +67,9 @@ async function main(): Promise<void> {
   const port = await freePort();
   const db = join(root, "data", "demo-taskdock.sqlite");
   const fixtureDb = join(root, "data", "demo-fixture.sqlite");
+  for (const f of [db, db + "-wal", db + "-shm", fixtureDb, fixtureDb + "-wal", fixtureDb + "-shm"]) {
+    rmSync(f, { force: true });
+  }
   const url = `http://127.0.0.1:${port}/mcp`;
 
   console.log("=== TaskDock cross-client demo ===");

@@ -17,7 +17,8 @@
     "client-b": "tsx src/clients/client-b.ts",
     "demo": "tsx scripts/demo.ts",
     "test": "tsx --test --test-reporter=spec tests/*.test.ts",
-    "experiments": "tsx scripts/experiments.ts"
+    "experiments": "tsx scripts/experiments.ts",
+    "cli": "tsx src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
