@@ -32,7 +32,7 @@ export type NativeControlResult = {
   warning?: string;
 };
 
-const CLI_CLIENT = { name: "taskdock", version: "0.1.0" };
+const CLI_CLIENT = { name: "taskdock", version: "0.2.0" };
 
 /** Local durable index. Control methods open a fresh MCP connection per call. */
 export class TaskDock {
