@@ -1,6 +1,6 @@
 {
   "name": "taskdock",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "type": "module",
   "description": "Durable task index for MCP Tasks",
@@ -33,6 +33,7 @@
     "docs/PROTOCOL_NOTES.md",
     "docs/SPIKE_RESULTS.md",
     "docs/SERVER_IDENTITY.md",
+    "docs/INGESTION.md",
     "docs/interop/INSPECTOR.md"
   ],
   "scripts": {

@@ -22,6 +22,8 @@ import type {
   TaskRecord,
   TaskRef,
 } from "./types.js";
+import type { IngestResult, ObservedNativeTask } from "./ingest/types.js";
+import { toRegisterInput } from "./ingest/types.js";
 
 export type NativeControlResult = {
   ref: TaskRef;
@@ -30,7 +32,7 @@ export type NativeControlResult = {
   warning?: string;
 };
 
-const CLI_CLIENT = { name: "taskdock", version: "0.1.0" };
+const CLI_CLIENT = { name: "taskdock", version: "0.2.0" };
 
 /** Local durable index. Control methods open a fresh MCP connection per call. */
 export class TaskDock {
@@ -74,6 +76,13 @@ export class TaskDock {
 
   register(input: RegisterTaskInput): TaskRecord {
     return this.registry.register(input);
+  }
+
+  ingest(observed: ObservedNativeTask): IngestResult {
+    if (!observed.nativeTaskId) {
+      throw new Error("CreateTaskResult is missing a native taskId");
+    }
+    return this.registry.ingest(toRegisterInput(observed));
   }
 
   list(filter?: {

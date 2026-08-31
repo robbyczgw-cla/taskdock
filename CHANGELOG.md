@@ -2,49 +2,51 @@
 
 ## Unreleased
 
-Not on npm. v0.1.0 remains the published package.
+## 0.2.0 — 2026-08-31
+
+Durable native MCP task continuity plus automatic capture plumbing.
+
+Capture a native task handle once. Resume and control it from any later
+session. TaskDock still does not keep the task alive. The MCP server does.
 
 ### Added
 
-- `taskdock get <id>` runs a live native `tasks/get` on a fresh connection.
-  `poll` is an alias.
-- `taskdock cancel <id>` routes native `tasks/cancel`.
-- `taskdock update <id> --input-responses <json>` routes native `tasks/update`.
-- `taskdock list --server <id>` and `--status <status>`.
-- `register --task-id` ( `--task` still works).
-- Server fingerprint: SHA-256 of the canonical HTTP/stdio endpoint plus
-  `env:VAR`, never a secret or display name. See
+- `taskdock get <id>`: live native `tasks/get` on a fresh connection. `poll`
+  is an alias.
+- `taskdock cancel <id>`: native `tasks/cancel`, then a follow-up `tasks/get`.
+- `taskdock update <id> --input-responses <json>`: native `tasks/update`, then
+  a follow-up `tasks/get`.
+- `taskdock ingest`: one-shot hook sink (`--stdin` or `--payload`). Ordinary
+  tool results are ignored (exit 0). `--strict` turns that into an error.
+  See [docs/INGESTION.md](docs/INGESTION.md).
+- `TaskDock.ingest()` and `parseObservedTask()` for plugins. Ingest stores
+  only safe identity fields. `register()` still persists caller-supplied
+  `metadata`.
+- `list --server` and `--status`.
+- `register --task-id` (`--task` still works).
+- Server fingerprint of canonical endpoint plus `env:VAR`. See
   [docs/SERVER_IDENTITY.md](docs/SERVER_IDENTITY.md).
-- Generic ingest interface in `src/ingest/` for later client observers.
-  Registration is still an explicit CLI call.
-- Schema migration for `fingerprint`, `ttl_ms`, and `last_error`. Existing
-  databases open and backfill fingerprints.
+- Fail-open hook wrapper: `examples/ingest-hook.sh`.
 
 ### Changed
 
 - `show` is the cached registry row. `get` talks to the server.
 - `resume` on `input_required` points at `update`.
-- CLI register may probe `server/discover` once. `get` / `cancel` / `update`
-  send only the native Tasks method (`Mcp-Name` = native `taskId`). Identity
-  is compared from a stored baseline or from `_meta` on `tasks/get`.
-- Missing `env:VAR` fails before the request. URL userinfo is stripped before
-  storage.
+- `get` / `cancel` / `update` send only the native Tasks method
+  (`Mcp-Name` = native `taskId`). They do not call `server/discover` first.
+- Missing `env:VAR` fails before the request. URL userinfo is stripped.
 
 ### Fixed
 
-- Re-adding a server profile with a different endpoint is rejected while tasks
-  still reference it. Old handles cannot be silently pointed at a new URL.
-- After a successful `cancel` or `update` ack, a failed follow-up `tasks/get`
-  is recorded in `last_error`. The ack is kept. The row is not treated as
-  freshly observed.
-- Re-registering a known handle no longer clears `last_error`.
-- `docs/_*` scratch files are gitignored.
-- Native `get` / `cancel` / `update` no longer call `server/discover` first.
-- JSON-RPC `-32602` is Invalid Params. It is `TaskNotFoundError` only when
-  the server says the task does not exist.
-- Opening a v0.1.0 database strips URL userinfo from stored server
-  transports and drops auth values that are not `env:VAR`.
-- `Registry.addServer` rejects literal auth the same way the CLI does.
+- Re-adding a server with a different endpoint is rejected while tasks still
+  reference it.
+- After a successful cancel/update ack, a failed follow-up `tasks/get` is
+  kept in `last_error`. The row is not treated as freshly observed.
+- `-32602` is Invalid Params. `TaskNotFoundError` only when the server says
+  the task does not exist.
+- Opening a v0.1.0 database strips stored URL userinfo and drops auth values
+  that are not `env:VAR`.
+- `Registry.addServer` rejects literal auth.
 
 ## 0.1.0 — 2026-08-30
 

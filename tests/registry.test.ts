@@ -286,6 +286,36 @@ test("fingerprint is stable and omits secrets", () => {
   dock.close();
 });
 
+test("register persists caller-supplied metadata", () => {
+  const dock = new TaskDock(tempDb());
+  dock.addServer({
+    id: "demo",
+    name: "demo",
+    transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
+  });
+  const rec = dock.register({
+    serverProfileId: "demo",
+    taskHandle: "h1",
+    metadata: {
+      serverInfo: { name: "fx", version: "1" },
+      note: "caller-supplied",
+      extra: { nested: true },
+    },
+  });
+  assert.deepEqual(rec.metadata, {
+    serverInfo: { name: "fx", version: "1" },
+    note: "caller-supplied",
+    extra: { nested: true },
+  });
+  const again = dock.register({
+    serverProfileId: "demo",
+    taskHandle: "h1",
+    status: "working",
+  });
+  assert.deepEqual(again.metadata, rec.metadata);
+  dock.close();
+});
+
 test("label round-trips", () => {
   const dock = new TaskDock(tempDb());
   dock.addServer({

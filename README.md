@@ -1,6 +1,9 @@
 # TaskDock
 
-Durable task index for MCP Tasks.
+Capture native MCP task handles once, resume/control them from any later
+session.
+
+Durable task index for MCP Tasks (`io.modelcontextprotocol/tasks`).
 
 ## What it does
 
@@ -39,9 +42,9 @@ running. You just lose the handles.
 ### What it cannot do
 
 SEP-2663 has no `tasks/list`. There is no request that asks a server which
-tasks you own. TaskDock knows the handles it was given and nothing else, so a
-task that was never registered or observed is unrecoverable, by TaskDock or by
-anything else. Registration is the whole game.
+tasks you own. TaskDock knows the handles it was given or ingested and
+nothing else, so a task that was never observed is unrecoverable. Ingest and
+register are the whole game.
 
 ## Why
 
@@ -67,14 +70,13 @@ shows it abbreviated in the `NATIVE` column, `show` and `get` print it as
 
 ## Status
 
-v0.1.0 is released. This working tree adds the live control commands (`get`,
-`cancel`, `update`) and server fingerprints, and is not published yet.
-See [CHANGELOG.md](CHANGELOG.md).
+v0.2.0. Local-first, one SQLite file. Native `get` / `cancel` / `update`, plus
+`ingest` for one-shot hooks. See [CHANGELOG.md](CHANGELOG.md).
 
 Resume works against the official Rust SDK (`rmcp` 3.1.4) and against this
-repo's fixture server. The constraint is upstream: modern Tasks is still rare
-on coding agents, so most Client A roles today are custom code, MCP Inspector,
-or the bundled demo clients rather than your usual agent.
+repo's fixture server. Coding agents still rarely emit modern Tasks, so Client
+A today is a hook, MCP Inspector, or the bundled demo. See
+[docs/INGESTION.md](docs/INGESTION.md).
 
 MIT License. See [LICENSE](LICENSE).
 
@@ -85,15 +87,9 @@ npm install -g taskdock
 taskdock --help
 ```
 
-That gets you v0.1.0. `get`, `cancel`, and `update` are not in it. To run those,
-work from a checkout:
-
-```bash
-npm install
-npx tsx src/cli.ts --help
-```
-
 Needs Node 22 or newer for `node:sqlite`.
+
+From a checkout: `npx tsx src/cli.ts --help`.
 
 The registry defaults to `~/.local/share/taskdock/taskdock.sqlite` on Linux.
 Set `TASKDOCK_DB` to point somewhere else.
@@ -105,21 +101,32 @@ Set `TASKDOCK_DB` to point somewhere else.
 
 ## Quick start
 
-Register a server, then register a native handle you already have:
+End to end, two processes. The task keeps running on the MCP server.
 
 ```bash
-taskdock server add demo --http http://127.0.0.1:8000/mcp
-taskdock register --server demo --task-id 59b6f0e2-24c4-414d-a437-ed77ad80ae5f
+# terminal 1: native Tasks server
+npm run fixture-server
+
+# process A: a hook saw CreateTaskResult
+taskdock server add demo --http http://127.0.0.1:3333/mcp
+echo '{"resultType":"task","taskId":"<native-id>","status":"working"}' \
+  | taskdock ingest --server demo --source-client hook --stdin
+# process A exits
+
+# process B: new shell, no state from A
 taskdock list
 taskdock get td_01
-taskdock resume td_01
+taskdock cancel td_01
 ```
 
 `td_01` is the first id on a fresh registry. `get` opens a new connection and
-asks the server for the current state once. `resume` keeps polling until the
-task reaches a terminal state, then prints the result.
+asks the server once. `cancel` / `update` route the native methods, then read
+status back. `resume` polls until terminal.
 
-To watch the whole handoff end to end, run the three-terminal demo:
+If you already have a handle, `taskdock register --server demo --task-id <id>`
+is the fallback.
+
+To watch Client A / Client B without a hook:
 
 ```bash
 # terminal 1
@@ -170,6 +177,18 @@ TaskDock id. `--task` still works as an alias for `--task-id`.
 Handles are stored byte for byte. TaskDock never parses them, so `:`, `/`, `+`,
 `=`, and non-ASCII all round-trip. The same handle on the same server is the
 same task; the same handle on two servers is two rows.
+
+### `ingest --server <id> [--source-client <name>] [--stdin | --payload <json>] [--strict]`
+
+One-shot hook sink. Reads a CreateTaskResult (or a JSON-RPC envelope whose
+`result` is one) and registers it. Ordinary tool results print `ignored` and
+exit 0, so a client hook can forward every tool response. `--strict` turns
+that into an error. Human output is `registered td_07` or `known td_07`.
+`--json` does not include the native taskId. Fail the originating tool call
+only if you want that; the sample wrapper in `examples/ingest-hook.sh` always
+exits 0. See [docs/INGESTION.md](docs/INGESTION.md).
+
+Manual `register` remains the fallback when no hook is installed.
 
 ### `list [--json] [--active] [--server <id>] [--status <status>]`
 
@@ -305,11 +324,10 @@ command. One SQLite file on one machine, single user. Copying the file (plus
 its WAL) to another machine works and is tested, but nothing reconciles two
 copies.
 
-**Client A is the bottleneck.** No major coding agent emitted a modern Tasks
-handle as of 2026-08-29, and none of them hand their handles to anything.
-Registration is an explicit CLI call today. `src/ingest/` defines the interface
-a client-specific observer would implement, so that when a host does start
-emitting handles the registry does not grow a special case per host.
+**Client A is the bottleneck.** No major coding agent emits a modern Tasks
+handle as of 2026-08-31. `taskdock ingest` is the hook sink for when they
+do. Until then, `register` and the fixture are Client A. See
+[docs/INGESTION.md](docs/INGESTION.md).
 
 **License.** MIT. See [LICENSE](LICENSE).
 
@@ -329,7 +347,7 @@ Layout:
 - `src/registry/` SQLite schema and repository
 - `src/mcp/` JSON-RPC transport, Tasks calls, `_meta` and header encoding
 - `src/server-profiles/` profile parsing and fingerprints
-- `src/ingest/` how handles get in; CLI today, observers later
+- `src/ingest/` CreateTaskResult parser and hook sink
 - `src/clients/` the Client A and Client B demo processes
 - `src/cli.ts` command surface, `src/taskdock.ts` library API
 - `fixtures/test-task-server/` controlled Tasks server, including the

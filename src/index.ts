@@ -21,8 +21,14 @@ export {
   ServerConfigRemovedError,
 } from "./mcp/errors.js";
 export { serverFingerprint } from "./server-profiles/fingerprint.js";
-export type { ObservedNativeTask, TaskIngestor } from "./ingest/types.js";
+export type {
+  ObservedNativeTask,
+  TaskIngestor,
+  IngestResult,
+} from "./ingest/types.js";
 export { toRegisterInput } from "./ingest/types.js";
+export { parseObservedTask } from "./ingest/parse.js";
+export type { IngestContext, ParsedObservation } from "./ingest/parse.js";
 export type {
   TaskRecord,
   ServerProfile,
