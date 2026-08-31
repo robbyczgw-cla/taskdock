@@ -81,6 +81,7 @@ export type McpTask = {
   result?: Record<string, unknown>;
   error?: { code: number; message: string; data?: unknown };
   inputRequests?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
 };
 
 export type JsonRpcError = {

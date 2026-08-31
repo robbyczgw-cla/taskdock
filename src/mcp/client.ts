@@ -21,9 +21,8 @@ export type ConnectedClient = {
  * Fresh MCP connection: HTTP POST per call, no session handshake.
  * 2026-07-28 has no initialize / Mcp-Session-Id.
  */
-export function extractServerInfo(
-  discovered: Record<string, unknown>,
-): Record<string, unknown> {
+export function extractServerInfo(payload: object): Record<string, unknown> {
+  const discovered = payload as Record<string, unknown>;
   const meta = discovered._meta as Record<string, unknown> | undefined;
   const fromMeta = meta?.["io.modelcontextprotocol/serverInfo"];
   if (fromMeta && typeof fromMeta === "object") {

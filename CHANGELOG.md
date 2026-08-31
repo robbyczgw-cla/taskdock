@@ -24,9 +24,9 @@ Not on npm. v0.1.0 remains the published package.
 
 - `show` is the cached registry row. `get` talks to the server.
 - `resume` on `input_required` points at `update`.
-- CLI register stores `serverInfo` from `server/discover` when the server is
-  reachable. Otherwise the first successful `get` / `cancel` / `update` does.
-  Later calls warn if `name` or `version` changed.
+- CLI register may probe `server/discover` once. `get` / `cancel` / `update`
+  send only the native Tasks method (`Mcp-Name` = native `taskId`). Identity
+  is compared from a stored baseline or from `_meta` on `tasks/get`.
 - Missing `env:VAR` fails before the request. URL userinfo is stripped before
   storage.
 
@@ -39,6 +39,9 @@ Not on npm. v0.1.0 remains the published package.
   freshly observed.
 - Re-registering a known handle no longer clears `last_error`.
 - `docs/_*` scratch files are gitignored.
+- Native `get` / `cancel` / `update` no longer call `server/discover` first.
+- JSON-RPC `-32602` is Invalid Params. It is `TaskNotFoundError` only when
+  the server says the task does not exist.
 
 ## 0.1.0 — 2026-08-30
 

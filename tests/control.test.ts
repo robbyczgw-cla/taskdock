@@ -1,13 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createServer, type IncomingMessage } from "node:http";
 import { join } from "node:path";
 import { TaskDock } from "../src/taskdock.ts";
 import { callToolTask } from "../src/mcp/client.ts";
+import { decodeMcpHeaderValue, TASKS_EXTENSION } from "../src/mcp/meta.ts";
 import {
   AuthEnvMissingError,
   ServerUnavailableError,
   TaskExpiredError,
+  TaskNotFoundError,
 } from "../src/mcp/errors.ts";
 import { startFixture, tempDb } from "./helpers.ts";
 
@@ -42,6 +45,89 @@ function runCli(
       resolve({ code: code ?? 1, stdout, stderr });
     });
   });
+}
+
+type RecordedCall = {
+  method: string;
+  mcpMethod?: string;
+  mcpName?: string;
+  hasTasksCap: boolean;
+};
+
+function readHttpBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c as Buffer));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+async function startRoutingProbe(): Promise<{
+  url: string;
+  nativeId: string;
+  calls: RecordedCall[];
+  stop: () => Promise<void>;
+}> {
+  const calls: RecordedCall[] = [];
+  const nativeId = "native-handle-1";
+  const server = createServer(async (req, res) => {
+    const raw = await readHttpBody(req);
+    const msg = JSON.parse(raw) as {
+      id?: unknown;
+      method?: string;
+      params?: { taskId?: string; _meta?: Record<string, unknown> };
+    };
+    const method = String(msg.method ?? "");
+    const caps = msg.params?._meta?.[
+      "io.modelcontextprotocol/clientCapabilities"
+    ] as { extensions?: Record<string, unknown> } | undefined;
+    calls.push({
+      method,
+      mcpMethod:
+        typeof req.headers["mcp-method"] === "string"
+          ? req.headers["mcp-method"]
+          : undefined,
+      mcpName:
+        typeof req.headers["mcp-name"] === "string"
+          ? decodeMcpHeaderValue(req.headers["mcp-name"])
+          : undefined,
+      hasTasksCap: Boolean(caps?.extensions?.[TASKS_EXTENSION]),
+    });
+    const result =
+      method === "tasks/get"
+        ? {
+            resultType: "complete",
+            taskId: msg.params?.taskId ?? nativeId,
+            status: "working",
+            createdAt: "2026-08-31T00:00:00.000Z",
+            lastUpdatedAt: "2026-08-31T00:00:00.000Z",
+            ttlMs: null,
+            _meta: {
+              "io.modelcontextprotocol/serverInfo": {
+                name: "probe",
+                version: "1",
+              },
+            },
+          }
+        : { resultType: "complete" };
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id ?? null, result }));
+  });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const addr = server.address();
+  if (!addr || typeof addr === "string") throw new Error("no port");
+  return {
+    url: `http://127.0.0.1:${addr.port}/mcp`,
+    nativeId,
+    calls,
+    stop: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      }),
+  };
 }
 
 test("cross-process native get uses stored server identity + taskId", async () => {
@@ -449,6 +535,68 @@ test("identity mismatch warns on get and cancel without dropping the row", async
     assert.equal(dock.show(rec.id).id, rec.id);
     const cancelled = await dock.cancelNative(rec.id);
     assert.match(cancelled.warning ?? "", /identity differs/i);
+    assert.equal(dock.show(rec.id).id, rec.id);
+  } finally {
+    dock.close();
+    await fx.stop();
+  }
+});
+
+test("get/cancel/update do not call server/discover", async () => {
+  const probe = await startRoutingProbe();
+  const dock = new TaskDock(tempDb());
+  try {
+    dock.addServer({
+      id: "probe",
+      name: "probe",
+      transport: { type: "http", url: probe.url },
+    });
+    const rec = dock.register({
+      serverProfileId: "probe",
+      taskHandle: probe.nativeId,
+    });
+
+    const assertRouted = (methods: string[]) => {
+      assert.deepEqual(
+        probe.calls.map((c) => c.method),
+        methods,
+      );
+      for (const call of probe.calls) {
+        assert.notEqual(call.method, "server/discover");
+        assert.equal(call.mcpMethod, call.method);
+        assert.equal(call.mcpName, probe.nativeId);
+        assert.equal(call.hasTasksCap, true);
+      }
+    };
+
+    probe.calls.length = 0;
+    await dock.getNative(rec.id);
+    assertRouted(["tasks/get"]);
+    assert.equal(dock.show(rec.id).metadata?.serverInfo?.name, "probe");
+
+    probe.calls.length = 0;
+    await dock.cancelNative(rec.id);
+    assertRouted(["tasks/cancel", "tasks/get"]);
+
+    probe.calls.length = 0;
+    await dock.updateNative(rec.id, { prompt: { action: "accept" } });
+    assertRouted(["tasks/update", "tasks/get"]);
+  } finally {
+    dock.close();
+    await probe.stop();
+  }
+});
+
+test("getNative missing handle is TaskNotFoundError", async () => {
+  const fx = await startFixture({ binding: "independent" });
+  const dock = new TaskDock(tempDb());
+  try {
+    dock.addServer(fx.profile);
+    const rec = dock.register({
+      serverProfileId: fx.profile.id,
+      taskHandle: "does-not-exist",
+    });
+    await assert.rejects(() => dock.getNative(rec.id), TaskNotFoundError);
     assert.equal(dock.show(rec.id).id, rec.id);
   } finally {
     dock.close();

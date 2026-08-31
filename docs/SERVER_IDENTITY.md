@@ -50,10 +50,11 @@ share a fingerprint and remain two rows. TaskDock does not auto-merge them.
   fingerprint, so you can compare.
 
 It is not a cryptographic server attestation. A process that takes over an
-IP can keep the fingerprint. `server/discover` `name` / `version` is stored
-when the server is reachable at register time, or on the first successful
-`get` / `cancel` / `update`. Later calls warn on mismatch and still send the
-native request.
+IP can keep the fingerprint. `server/discover` runs at register time when the
+server is reachable, or from an explicit probe. Native `get` / `cancel` /
+`update` do not call discover. They route with `Mcp-Name: <taskId>`. If a
+`tasks/get` response includes `serverInfo` in `_meta`, TaskDock stores or
+compares it and warns on mismatch.
 
 ## Secrets
 

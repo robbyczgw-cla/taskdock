@@ -66,6 +66,30 @@ function rpcCode(err: unknown): number | undefined {
   return undefined;
 }
 
+function errorBlob(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  let data = "";
+  if (typeof err === "object" && err !== null && "data" in err) {
+    try {
+      data = JSON.stringify((err as { data: unknown }).data);
+    } catch {
+      data = "";
+    }
+  }
+  return `${message}\n${data}`.toLowerCase();
+}
+
+function isTaskExpired(blob: string): boolean {
+  return (
+    /\btask has expired\b/.test(blob) ||
+    (/\bexpired\b/.test(blob) && /\btask\b/.test(blob))
+  );
+}
+
+function isTaskNotFound(blob: string): boolean {
+  return /\btask not found\b/.test(blob) || /\bfailed to retrieve task:.*not found\b/.test(blob);
+}
+
 export function classifyControlError(
   err: unknown,
   nativeTaskId: string,
@@ -73,20 +97,20 @@ export function classifyControlError(
 ): TaskDockError {
   if (err instanceof TaskDockError) return err;
   const message = err instanceof Error ? err.message : String(err);
-  const msg = message.toLowerCase();
+  const blob = errorBlob(err);
   const code = rpcCode(err);
   const isRpc = err instanceof Error && err.name === "McpRpcError";
   if (isRpc || code !== undefined) {
-    if (code === -32601 || msg.includes("method not found")) {
+    if (code === -32601 || blob.includes("method not found")) {
       return new TasksNotSupportedError(serverId);
     }
-    if (code === -32021 || msg.includes("missing required client capability")) {
+    if (code === -32021 || blob.includes("missing required client capability")) {
       return new TasksNotSupportedError(serverId);
     }
-    if (msg.includes("expired")) {
+    if (isTaskExpired(blob)) {
       return new TaskExpiredError(nativeTaskId);
     }
-    if (code === -32602 || msg.includes("not found")) {
+    if (isTaskNotFound(blob)) {
       return new TaskNotFoundError(nativeTaskId);
     }
     return new TaskDockError(message, { cause: err });

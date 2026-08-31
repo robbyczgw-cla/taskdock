@@ -217,13 +217,13 @@ cancelled, printing each status change on the way. If the task stops at
    `clientCapabilities`. Over Streamable HTTP, `Mcp-Name` repeats
    `params.taskId`; non-ASCII handles go over as `=?base64?...?=`, and the
    JSON-RPC body stays authoritative.
-3. Compare identity. If the server is reachable at `register` time, TaskDock
-   stores `serverInfo` from `server/discover`. If it is not, the first
-   successful `get`, `cancel`, or `update` does. Later calls warn if `name` or
-   `version` changed, then keep going. Only you know whether that redeploy
-   invalidated the handle. The profile fingerprint answers a narrower
-   question, whether two profiles point at the same endpoint, and is not an
-   attestation. See [docs/SERVER_IDENTITY.md](docs/SERVER_IDENTITY.md).
+3. Compare identity when we already have it. `register` may call
+   `server/discover` once if the server is up. `get`, `cancel`, and `update`
+   do not. They send the native Tasks method with `Mcp-Name` set to the
+   native `taskId`. If a later `tasks/get` response carries `serverInfo` in
+   `_meta`, TaskDock stores or compares it. A mismatch is a warning. The
+   request still goes out. See
+   [docs/SERVER_IDENTITY.md](docs/SERVER_IDENTITY.md).
 4. Poll `tasks/get` and write each status back to the row.
 
 Step 2 is the whole claim. A connection that shares no state with Client A

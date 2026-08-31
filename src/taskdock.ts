@@ -4,6 +4,7 @@ import { normalizeAuthProfile } from "./server-profiles/profiles.js";
 import {
   cancelTask,
   connect,
+  extractServerInfo,
   getTask,
   identityWarning,
   updateTask,
@@ -109,7 +110,7 @@ export class TaskDock {
     const ref = this.resolve(id);
     try {
       const connected = await connect(ref.serverProfile, CLI_CLIENT);
-      this.rememberIdentity(id, connected);
+      this.rememberIdentity(id, connected.serverInfo);
     } catch {
       // leave unprobed
     }
@@ -117,20 +118,23 @@ export class TaskDock {
 
   private rememberIdentity(
     id: string,
-    connected: ConnectedClient,
+    current: Record<string, unknown> | undefined,
   ): string | undefined {
     const recorded = this.show(id).metadata?.serverInfo as
       | Record<string, unknown>
       | undefined;
-    if (
-      !recorded &&
-      connected.serverInfo &&
-      Object.keys(connected.serverInfo).length > 0
-    ) {
-      this.registry.mergeMetadata(id, { serverInfo: connected.serverInfo });
+    if (!current || Object.keys(current).length === 0) {
       return undefined;
     }
-    return identityWarning(recorded, connected.serverInfo ?? {});
+    if (!recorded) {
+      this.registry.mergeMetadata(id, { serverInfo: current });
+      return undefined;
+    }
+    return identityWarning(recorded, current);
+  }
+
+  private rememberIdentityFromTask(id: string, task: McpTask): string | undefined {
+    return this.rememberIdentity(id, extractServerInfo(task));
   }
 
   private observeAfterWrite(
@@ -141,11 +145,13 @@ export class TaskDock {
   ): Promise<NativeControlResult> {
     return read()
       .then((task) => {
+        const observeWarning =
+          this.rememberIdentityFromTask(ref.id, task) ?? warning;
         this.registry.touch(ref.id, task.status, {
           ttlMs: task.ttlMs,
           clearError: true,
         });
-        return { ref: this.resolve(ref.id), ack, task, warning };
+        return { ref: this.resolve(ref.id), ack, task, warning: observeWarning };
       })
       .catch((err) => {
         const classified = classifyControlError(
@@ -164,11 +170,10 @@ export class TaskDock {
   async getNative(id: string): Promise<NativeControlResult> {
     const ref = this.requireRef(id);
     return this.withNative(ref, async () => {
-      const connected = await connect(ref.serverProfile, CLI_CLIENT);
-      const warning = this.rememberIdentity(ref.id, connected);
       const task = await getTask(ref.serverProfile, ref.taskHandle, {
         client: CLI_CLIENT,
       });
+      const warning = this.rememberIdentityFromTask(ref.id, task);
       this.registry.touch(ref.id, task.status, {
         ttlMs: task.ttlMs,
         clearError: true,
@@ -180,12 +185,10 @@ export class TaskDock {
   async cancelNative(id: string): Promise<NativeControlResult> {
     const ref = this.requireRef(id);
     return this.withNative(ref, async () => {
-      const connected = await connect(ref.serverProfile, CLI_CLIENT);
-      const warning = this.rememberIdentity(ref.id, connected);
       const ack = await cancelTask(ref.serverProfile, ref.taskHandle, {
         client: CLI_CLIENT,
       });
-      return this.observeAfterWrite(ref, ack, warning, () =>
+      return this.observeAfterWrite(ref, ack, undefined, () =>
         getTask(ref.serverProfile, ref.taskHandle, { client: CLI_CLIENT }),
       );
     });
@@ -197,15 +200,13 @@ export class TaskDock {
   ): Promise<NativeControlResult> {
     const ref = this.requireRef(id);
     return this.withNative(ref, async () => {
-      const connected = await connect(ref.serverProfile, CLI_CLIENT);
-      const warning = this.rememberIdentity(ref.id, connected);
       const ack = await updateTask(
         ref.serverProfile,
         ref.taskHandle,
         inputResponses,
         { client: CLI_CLIENT },
       );
-      return this.observeAfterWrite(ref, ack, warning, () =>
+      return this.observeAfterWrite(ref, ack, undefined, () =>
         getTask(ref.serverProfile, ref.taskHandle, { client: CLI_CLIENT }),
       );
     });

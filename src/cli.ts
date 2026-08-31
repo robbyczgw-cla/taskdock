@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { TaskDock } from "./taskdock.js";
 import { profileFromFlags } from "./server-profiles/profiles.js";
-import { connect, identityWarning, pollUntilTerminal } from "./mcp/client.js";
+import { extractServerInfo, identityWarning, pollUntilTerminal } from "./mcp/client.js";
 import { McpRpcError } from "./mcp/transport.js";
 import { PROTOCOL_VERSION, TASKS_EXTENSION_VERSION } from "./mcp/meta.js";
 import { TaskDockError } from "./mcp/errors.js";
@@ -365,16 +365,20 @@ async function runResume(dock: TaskDock, id: string): Promise<void> {
   console.log(`Loaded ${ref.id} from the local TaskDock registry`);
   console.log(`server: ${ref.serverProfile.id}`);
   try {
-    const connected = await connect(ref.serverProfile, {
-      name: "taskdock-cli",
-      version: "0.1.0",
-    });
-    const warn = identityWarning(
-      ref.record.metadata?.serverInfo as Record<string, unknown> | undefined,
-      connected.serverInfo ?? {},
-    );
-    if (warn) console.warn(warn);
-    const onTick = (task: { status: string; statusMessage?: string }) => {
+    let warned = false;
+    const onTick = (task: {
+      status: string;
+      statusMessage?: string;
+      _meta?: Record<string, unknown>;
+    }) => {
+      if (!warned) {
+        const warn = identityWarning(
+          ref.record.metadata?.serverInfo as Record<string, unknown> | undefined,
+          extractServerInfo(task),
+        );
+        if (warn) console.warn(warn);
+        warned = true;
+      }
       dock.registry.touch(ref.id, task.status, { clearError: true });
       console.log(
         `status: ${task.status}${task.statusMessage ? ` (${task.statusMessage})` : ""}`,
