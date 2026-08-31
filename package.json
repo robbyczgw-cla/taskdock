@@ -33,6 +33,7 @@
     "docs/PROTOCOL_NOTES.md",
     "docs/SPIKE_RESULTS.md",
     "docs/SERVER_IDENTITY.md",
+    "docs/INGESTION.md",
     "docs/interop/INSPECTOR.md"
   ],
   "scripts": {

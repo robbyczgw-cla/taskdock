@@ -17,6 +17,11 @@ Not on npm. v0.1.0 remains the published package.
   [docs/SERVER_IDENTITY.md](docs/SERVER_IDENTITY.md).
 - Generic ingest interface in `src/ingest/` for later client observers.
   Registration is still an explicit CLI call.
+- `taskdock ingest` one-shot hook sink: `--stdin` or `--payload`, optional
+  `--strict`. Ordinary tool results are ignored (exit 0) so a hook can
+  forward every tool response. See [docs/INGESTION.md](docs/INGESTION.md).
+- `TaskDock.ingest()` / `parseObservedTask()` for plugins that prefer the
+  library over a shell.
 - Schema migration for `fingerprint`, `ttl_ms`, and `last_error`. Existing
   databases open and backfill fingerprints.
 

@@ -1,4 +1,4 @@
-import type { RegisterTaskInput } from "../types.js";
+import type { RegisterTaskInput, TaskRecord } from "../types.js";
 
 /**
  * A native MCP task observed by some source (CLI, later a client hook).
@@ -18,14 +18,18 @@ export type ObservedNativeTask = {
 
 /**
  * How TaskDock learns native task handles.
- * This slice ships explicit CLI registration. Client-specific observers
- * (Claude Code, Codex, Cursor, …) should implement this later instead of
- * special-casing those hosts in the registry.
+ * CLI `ingest` and `register` are the shipped sources. Client observers
+ * should implement this rather than special-casing hosts in the registry.
  */
 export interface TaskIngestor {
   readonly id: string;
   observe(): Promise<ObservedNativeTask[]>;
 }
+
+export type IngestResult = {
+  record: TaskRecord;
+  created: boolean;
+};
 
 export function toRegisterInput(observed: ObservedNativeTask): RegisterTaskInput {
   return {

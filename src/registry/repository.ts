@@ -4,6 +4,8 @@ import type {
   TaskRecord,
   Transport,
 } from "../types.ts";
+import type { IngestResult } from "../ingest/types.js";
+import { pickSafeMetadata } from "../ingest/metadata.js";
 import type { Database } from "./db.ts";
 import {
   sanitizeTransport,
@@ -184,18 +186,22 @@ export class Registry {
   }
 
   register(input: RegisterTaskInput): TaskRecord {
+    return this.ingest(input).record;
+  }
+
+  ingest(input: RegisterTaskInput): IngestResult {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const record = this.registerLocked(input);
+      const result = this.ingestLocked(input);
       this.db.exec("COMMIT");
-      return record;
+      return result;
     } catch (err) {
       this.db.exec("ROLLBACK");
       throw err;
     }
   }
 
-  private registerLocked(input: RegisterTaskInput): TaskRecord {
+  private ingestLocked(input: RegisterTaskInput): IngestResult {
     const server = this.getServer(input.serverProfileId);
     if (!server) {
       throw new Error(
@@ -212,6 +218,7 @@ export class Registry {
         `SELECT * FROM tasks WHERE server_profile_id = ? AND task_handle = ?`,
       )
       .get(input.serverProfileId, input.taskHandle) as TaskRow | undefined;
+    const safeMeta = pickSafeMetadata(input.metadata);
 
     if (existing) {
       this.db
@@ -223,8 +230,7 @@ export class Registry {
              label = COALESCE(?, label),
              protocol_version = COALESCE(?, protocol_version),
              extension_version = COALESCE(?, extension_version),
-             ttl_ms = COALESCE(?, ttl_ms),
-             metadata_json = COALESCE(?, metadata_json)
+             ttl_ms = COALESCE(?, ttl_ms)
            WHERE id = ?`,
         )
         .run(
@@ -235,10 +241,10 @@ export class Registry {
           input.protocolVersion ?? null,
           input.taskExtensionVersion ?? null,
           input.ttlMs ?? null,
-          input.metadata ? JSON.stringify(input.metadata) : null,
           existing.id,
         );
-      return this.get(existing.id)!;
+      if (safeMeta) this.mergeMetadata(existing.id, safeMeta);
+      return { record: this.get(existing.id)!, created: false };
     }
 
     const id = nextTaskId(this.db);
@@ -262,9 +268,9 @@ export class Registry {
         input.ttlMs ?? null,
         now,
         now,
-        input.metadata ? JSON.stringify(input.metadata) : null,
+        safeMeta ? JSON.stringify(safeMeta) : null,
       );
-    return this.get(id)!;
+    return { record: this.get(id)!, created: true };
   }
 
   get(id: string): TaskRecord | undefined {

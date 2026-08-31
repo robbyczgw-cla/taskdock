@@ -6,6 +6,7 @@ import { McpRpcError } from "./mcp/transport.js";
 import { PROTOCOL_VERSION, TASKS_EXTENSION_VERSION } from "./mcp/meta.js";
 import { TaskDockError } from "./mcp/errors.js";
 import { toRegisterInput } from "./ingest/types.js";
+import { parseObservedTask } from "./ingest/parse.js";
 import { abbreviateHandle, formatAge } from "./format.js";
 import type { NativeControlResult } from "./taskdock.js";
 import type { ServerProfile, TaskRecord, TaskRef } from "./types.js";
@@ -30,6 +31,7 @@ Usage:
   taskdock server show <name> [--json]
   taskdock server remove <name>
   taskdock register --server <id> --task-id <native-id> [--source-client <name>] [--label <label>]
+  taskdock ingest --server <id> --source-client <name> [--label <label>] [--stdin | --payload <json>] [--strict] [--json]
   taskdock list [--json] [--active] [--server <id>] [--status <status>]
   taskdock show <id> [--json]
   taskdock get <id> [--json]
@@ -80,6 +82,14 @@ function printJson(value: unknown): void {
 function transportLabel(profile: ServerProfile): string {
   if (profile.transport.type === "http") return profile.transport.url;
   return `${profile.transport.command} ${(profile.transport.args ?? []).join(" ")}`.trim();
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function parseInputResponses(raw: string): Record<string, unknown> {
@@ -201,6 +211,52 @@ async function main(): Promise<void> {
       const stored = dock.show(record.id);
       console.log(`registered ${stored.id}`);
       if (jsonOut) printJson({ ...stored, nativeTaskId: stored.taskHandle });
+      return;
+    }
+
+    if (cmd === "ingest") {
+      const server = flag(rest, "--server");
+      if (!server) usage();
+      const payloadFlag = flag(rest, "--payload");
+      const useStdin = has(rest, "--stdin") || has(argv, "--stdin");
+      if (!useStdin && payloadFlag === undefined) usage();
+      const raw = useStdin ? await readStdin() : payloadFlag!;
+      const parsed = parseObservedTask(raw, {
+        serverProfileId: server,
+        sourceClient: flag(rest, "--source-client"),
+        label: flag(rest, "--label"),
+      });
+      const strict = has(rest, "--strict") || has(argv, "--strict");
+      if (parsed.kind === "ignored") {
+        if (strict) {
+          throw new Error("ingest payload is not a CreateTaskResult");
+        }
+        if (jsonOut) {
+          printJson({
+            ignored: true,
+            created: false,
+            server,
+            sourceClient: flag(rest, "--source-client") ?? null,
+          });
+        } else {
+          console.log("ignored");
+        }
+        return;
+      }
+      if (parsed.kind === "invalid") {
+        throw new Error(parsed.message);
+      }
+      const result = dock.ingest(parsed.observed);
+      if (jsonOut) {
+        printJson({
+          id: result.record.id,
+          created: result.created,
+          server: result.record.serverProfileId,
+          sourceClient: result.record.sourceClient ?? null,
+        });
+      } else {
+        console.log(`${result.created ? "registered" : "known"} ${result.record.id}`);
+      }
       return;
     }
 

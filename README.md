@@ -171,6 +171,18 @@ Handles are stored byte for byte. TaskDock never parses them, so `:`, `/`, `+`,
 `=`, and non-ASCII all round-trip. The same handle on the same server is the
 same task; the same handle on two servers is two rows.
 
+### `ingest --server <id> [--source-client <name>] [--stdin | --payload <json>] [--strict]`
+
+One-shot hook sink. Reads a CreateTaskResult (or a JSON-RPC envelope whose
+`result` is one) and registers it. Ordinary tool results print `ignored` and
+exit 0, so a client hook can forward every tool response. `--strict` turns
+that into an error. Human output is `registered td_07` or `known td_07`.
+`--json` does not include the native taskId. Fail the originating tool call
+only if you want that; the sample wrapper in `examples/ingest-hook.sh` always
+exits 0. See [docs/INGESTION.md](docs/INGESTION.md).
+
+Manual `register` remains the fallback when no hook is installed.
+
 ### `list [--json] [--active] [--server <id>] [--status <status>]`
 
 Registered tasks: id, cached status, server, native handle, origin, age.
@@ -305,11 +317,10 @@ command. One SQLite file on one machine, single user. Copying the file (plus
 its WAL) to another machine works and is tested, but nothing reconciles two
 copies.
 
-**Client A is the bottleneck.** No major coding agent emitted a modern Tasks
-handle as of 2026-08-29, and none of them hand their handles to anything.
-Registration is an explicit CLI call today. `src/ingest/` defines the interface
-a client-specific observer would implement, so that when a host does start
-emitting handles the registry does not grow a special case per host.
+**Client A is the bottleneck.** No major coding agent emits a modern Tasks
+handle as of 2026-08-31. `taskdock ingest` is the hook sink for when they
+do. Until then, `register` and the fixture are Client A. See
+[docs/INGESTION.md](docs/INGESTION.md).
 
 **License.** MIT. See [LICENSE](LICENSE).
 
@@ -329,7 +340,7 @@ Layout:
 - `src/registry/` SQLite schema and repository
 - `src/mcp/` JSON-RPC transport, Tasks calls, `_meta` and header encoding
 - `src/server-profiles/` profile parsing and fingerprints
-- `src/ingest/` how handles get in; CLI today, observers later
+- `src/ingest/` CreateTaskResult parser and hook sink
 - `src/clients/` the Client A and Client B demo processes
 - `src/cli.ts` command surface, `src/taskdock.ts` library API
 - `fixtures/test-task-server/` controlled Tasks server, including the
