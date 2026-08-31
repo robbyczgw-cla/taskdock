@@ -61,12 +61,12 @@ of the hosts both speak SEP-2663 and expose a CreateTaskResult to a hook.
 | Client | Native SEP-2663 | Observe CreateTaskResult without a proxy | Testable as Client A | Verdict |
 | ------ | --------------- | ---------------------------------------- | -------------------- | ------- |
 | Claude Code | no (not on the extension matrix) | PostToolUse `tool_response` exists; would work if the host ever returned `resultType: "task"` | no | NO_TASKS |
-| Codex CLI | no (capability allow-list omits the extension) | no documented post-tool hook that sees MCP wire results | no | NO_TASKS |
+| Codex CLI | no. Allow-list omits the extension. `rmcp` `call_tool` maps `CallToolResponse::Task` to `UnexpectedResponse` before hooks | `PostToolUse` / `tool_response` is real, but only after a successful `CallToolResult` | no | NO_TASKS |
 | Cursor | no | no documented MCP result hook | no | NO_TASKS |
 | VS Code / Copilot | legacy 2025-11-25 tasks only | in-memory `McpTaskManager`, not a CreateTaskResult hook | no | NO_TASKS |
-| OpenCode | no (own `task` tool is a subagent) | no | no | NO_TASKS |
-| Pi | no built-in MCP Tasks | no | no | NO_TASKS |
-| Hermes | Python SDK v2, extension not implemented | no | no | NO_TASKS |
+| OpenCode | no. Pins TS SDK 1.29; `callTool` uses `CallToolResultSchema` | `tool.execute.after` runs only after that schema succeeds | no | NO_TASKS |
+| Pi | no MCP client in core | `pi.on("tool_result")` sees Pi's normalized result, not an MCP wire body | no | NO_TASKS |
+| Hermes | Python SDK 2.0, SEP-2663 not implemented | `post_tool_call` gets a JSON string of adapted `CallToolResult`, not `CreateTaskResult` | no | NO_TASKS |
 | MCP Inspector | yes | interactive UI; no machine hook that emits CreateTaskResult to stdin | manual copy | INSPECTOR_ONLY |
 
 Reference integration: this repo's fixture + `taskdock ingest` (see tests).
