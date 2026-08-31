@@ -352,3 +352,79 @@ test("openDatabase upgrades a prior schema and backfills fingerprints", () => {
   assert.equal(rec.label, "ok");
   dock.close();
 });
+
+test("upgrade strips URL userinfo from a v0.1.0 server row", () => {
+  const path = tempDb();
+  const old = new DatabaseSync(path);
+  old.exec(`
+    CREATE TABLE server_profiles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      transport_json TEXT NOT NULL,
+      auth_profile TEXT
+    );
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      task_handle TEXT NOT NULL,
+      server_profile_id TEXT NOT NULL,
+      protocol_version TEXT,
+      extension_version TEXT,
+      status TEXT,
+      source_client TEXT,
+      created_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      metadata_json TEXT,
+      FOREIGN KEY(server_profile_id) REFERENCES server_profiles(id)
+    );
+  `);
+  old
+    .prepare(
+      `INSERT INTO server_profiles (id, name, transport_json, auth_profile)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(
+      "demo",
+      "demo",
+      JSON.stringify({
+        type: "http",
+        url: "http://alice:secret@127.0.0.1:9/mcp",
+      }),
+      "literal-db-secret",
+    );
+  old.close();
+
+  const dock = new TaskDock(path);
+  const server = dock.getServer("demo");
+  assert.equal(server?.transport.type, "http");
+  if (server?.transport.type === "http") {
+    assert.equal(server.transport.url.includes("secret"), false);
+    assert.equal(server.transport.url.includes("alice"), false);
+  }
+  assert.equal(server?.authProfile, undefined);
+  dock.close();
+
+  const dumped = new DatabaseSync(path);
+  const row = dumped
+    .prepare(`SELECT transport_json, auth_profile FROM server_profiles WHERE id = ?`)
+    .get("demo") as { transport_json: string; auth_profile: string | null };
+  dumped.close();
+  assert.equal(row.transport_json.includes("secret"), false);
+  assert.equal(row.transport_json.includes("alice"), false);
+  assert.equal(row.auth_profile, null);
+});
+
+test("Registry.addServer rejects a literal auth credential", () => {
+  const dock = new TaskDock(tempDb());
+  assert.throws(
+    () =>
+      dock.registry.addServer({
+        id: "demo",
+        name: "demo",
+        transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
+        authProfile: "literal-secret",
+      }),
+    /env:VAR|does not store credential/,
+  );
+  assert.equal(dock.getServer("demo"), undefined);
+  dock.close();
+});

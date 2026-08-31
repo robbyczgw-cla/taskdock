@@ -42,6 +42,9 @@ Not on npm. v0.1.0 remains the published package.
 - Native `get` / `cancel` / `update` no longer call `server/discover` first.
 - JSON-RPC `-32602` is Invalid Params. It is `TaskNotFoundError` only when
   the server says the task does not exist.
+- Opening a v0.1.0 database strips URL userinfo from stored server
+  transports and drops auth values that are not `env:VAR`.
+- `Registry.addServer` rejects literal auth the same way the CLI does.
 
 ## 0.1.0 — 2026-08-30
 

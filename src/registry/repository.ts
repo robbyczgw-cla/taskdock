@@ -9,6 +9,7 @@ import {
   sanitizeTransport,
   serverFingerprint,
 } from "../server-profiles/fingerprint.js";
+import { normalizeAuthProfile } from "../server-profiles/profiles.js";
 
 type ProfileRow = {
   id: string;
@@ -80,21 +81,34 @@ function nextTaskId(db: Database): string {
 
 export class Registry {
   constructor(private readonly db: Database) {
-    this.backfillFingerprints();
+    this.sanitizeStoredProfiles();
   }
 
-  private backfillFingerprints(): void {
+  private sanitizeStoredProfiles(): void {
     const rows = this.db
-      .prepare(
-        `SELECT * FROM server_profiles WHERE fingerprint IS NULL OR fingerprint = ''`,
-      )
+      .prepare(`SELECT * FROM server_profiles`)
       .all() as ProfileRow[];
     const update = this.db.prepare(
-      `UPDATE server_profiles SET fingerprint = ? WHERE id = ?`,
+      `UPDATE server_profiles SET transport_json = ?, auth_profile = ?, fingerprint = ? WHERE id = ?`,
     );
     for (const row of rows) {
       const profile = profileFromRow(row);
-      update.run(serverFingerprint(profile), row.id);
+      const transport = sanitizeTransport(profile.transport);
+      let authProfile: string | undefined;
+      try {
+        authProfile = normalizeAuthProfile(profile.authProfile);
+      } catch {
+        authProfile = undefined;
+      }
+      const fingerprint = serverFingerprint({ transport, authProfile });
+      const transportJson = JSON.stringify(transport);
+      if (
+        transportJson !== row.transport_json ||
+        (row.auth_profile ?? null) !== (authProfile ?? null) ||
+        row.fingerprint !== fingerprint
+      ) {
+        update.run(transportJson, authProfile ?? null, fingerprint, row.id);
+      }
     }
   }
 
@@ -107,9 +121,10 @@ export class Registry {
 
   addServer(profile: ServerProfile): ServerProfile {
     const transport = sanitizeTransport(profile.transport);
+    const authProfile = normalizeAuthProfile(profile.authProfile);
     const fingerprint = serverFingerprint({
       transport,
-      authProfile: profile.authProfile,
+      authProfile,
     });
     const existing = this.getServer(profile.id);
     if (existing && existing.fingerprint && existing.fingerprint !== fingerprint) {
@@ -134,7 +149,7 @@ export class Registry {
         profile.id,
         profile.name,
         JSON.stringify(transport),
-        profile.authProfile ?? null,
+        authProfile ?? null,
         fingerprint,
       );
     return this.getServer(profile.id)!;
