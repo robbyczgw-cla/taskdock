@@ -1,14 +1,38 @@
 import { defaultDbPath, openDatabase, type Database } from "./registry/db.js";
 import { Registry } from "./registry/repository.js";
 import { normalizeAuthProfile } from "./server-profiles/profiles.js";
+import {
+  cancelTask,
+  connect,
+  extractServerInfo,
+  getTask,
+  identityWarning,
+  updateTask,
+  type ConnectedClient,
+} from "./mcp/client.js";
+import {
+  classifyControlError,
+  ServerConfigRemovedError,
+  TaskDockError,
+} from "./mcp/errors.js";
 import type {
+  McpTask,
   RegisterTaskInput,
   ServerProfile,
   TaskRecord,
   TaskRef,
 } from "./types.js";
 
-/** Tiny library API. Does not open MCP connections. */
+export type NativeControlResult = {
+  ref: TaskRef;
+  task?: McpTask;
+  ack?: Record<string, unknown>;
+  warning?: string;
+};
+
+const CLI_CLIENT = { name: "taskdock", version: "0.1.0" };
+
+/** Local durable index. Control methods open a fresh MCP connection per call. */
 export class TaskDock {
   readonly registry: Registry;
   readonly db: Database;
@@ -52,19 +76,157 @@ export class TaskDock {
     return this.registry.register(input);
   }
 
-  list(): TaskRecord[] {
-    return this.registry.list();
+  list(filter?: {
+    server?: string;
+    status?: string;
+    active?: boolean;
+  }): TaskRecord[] {
+    return this.registry.list(filter);
   }
 
   resolve(id: string): TaskRef {
     const record = this.show(id);
     const serverProfile = this.registry.getServer(record.serverProfileId);
     if (!serverProfile) {
-      throw new Error(
-        `Task ${id} references missing server profile ${record.serverProfileId}`,
-      );
+      throw new ServerConfigRemovedError(id, record.serverProfileId);
     }
     return { id, taskHandle: record.taskHandle, serverProfile, record };
+  }
+
+  private requireRef(id: string): TaskRef {
+    this.show(id);
+    try {
+      return this.resolve(id);
+    } catch (err) {
+      if (err instanceof ServerConfigRemovedError) {
+        this.registry.recordError(id, err.message);
+      }
+      throw err;
+    }
+  }
+
+  /** Store serverInfo from discover when reachable. Does not fail registration. */
+  async captureIdentity(id: string): Promise<void> {
+    const ref = this.resolve(id);
+    try {
+      const connected = await connect(ref.serverProfile, CLI_CLIENT);
+      this.rememberIdentity(id, connected.serverInfo);
+    } catch {
+      // leave unprobed
+    }
+  }
+
+  private rememberIdentity(
+    id: string,
+    current: Record<string, unknown> | undefined,
+  ): string | undefined {
+    const recorded = this.show(id).metadata?.serverInfo as
+      | Record<string, unknown>
+      | undefined;
+    if (!current || Object.keys(current).length === 0) {
+      return undefined;
+    }
+    if (!recorded) {
+      this.registry.mergeMetadata(id, { serverInfo: current });
+      return undefined;
+    }
+    return identityWarning(recorded, current);
+  }
+
+  private rememberIdentityFromTask(id: string, task: McpTask): string | undefined {
+    return this.rememberIdentity(id, extractServerInfo(task));
+  }
+
+  private observeAfterWrite(
+    ref: TaskRef,
+    ack: Record<string, unknown>,
+    warning: string | undefined,
+    read: () => Promise<McpTask>,
+  ): Promise<NativeControlResult> {
+    return read()
+      .then((task) => {
+        const observeWarning =
+          this.rememberIdentityFromTask(ref.id, task) ?? warning;
+        this.registry.touch(ref.id, task.status, {
+          ttlMs: task.ttlMs,
+          clearError: true,
+        });
+        return { ref: this.resolve(ref.id), ack, task, warning: observeWarning };
+      })
+      .catch((err) => {
+        const classified = classifyControlError(
+          err,
+          ref.taskHandle,
+          ref.serverProfile.id,
+        );
+        this.registry.recordError(ref.id, classified.message);
+        const observeWarning = warning
+          ? `${warning}\n${classified.message}`
+          : classified.message;
+        return { ref: this.resolve(ref.id), ack, warning: observeWarning };
+      });
+  }
+
+  async getNative(id: string): Promise<NativeControlResult> {
+    const ref = this.requireRef(id);
+    return this.withNative(ref, async () => {
+      const task = await getTask(ref.serverProfile, ref.taskHandle, {
+        client: CLI_CLIENT,
+      });
+      const warning = this.rememberIdentityFromTask(ref.id, task);
+      this.registry.touch(ref.id, task.status, {
+        ttlMs: task.ttlMs,
+        clearError: true,
+      });
+      return { ref: this.resolve(id), task, warning };
+    });
+  }
+
+  async cancelNative(id: string): Promise<NativeControlResult> {
+    const ref = this.requireRef(id);
+    return this.withNative(ref, async () => {
+      const ack = await cancelTask(ref.serverProfile, ref.taskHandle, {
+        client: CLI_CLIENT,
+      });
+      return this.observeAfterWrite(ref, ack, undefined, () =>
+        getTask(ref.serverProfile, ref.taskHandle, { client: CLI_CLIENT }),
+      );
+    });
+  }
+
+  async updateNative(
+    id: string,
+    inputResponses: Record<string, unknown>,
+  ): Promise<NativeControlResult> {
+    const ref = this.requireRef(id);
+    return this.withNative(ref, async () => {
+      const ack = await updateTask(
+        ref.serverProfile,
+        ref.taskHandle,
+        inputResponses,
+        { client: CLI_CLIENT },
+      );
+      return this.observeAfterWrite(ref, ack, undefined, () =>
+        getTask(ref.serverProfile, ref.taskHandle, { client: CLI_CLIENT }),
+      );
+    });
+  }
+
+  private async withNative(
+    ref: TaskRef,
+    op: () => Promise<NativeControlResult>,
+  ): Promise<NativeControlResult> {
+    try {
+      return await op();
+    } catch (err) {
+      const classified = classifyControlError(
+        err,
+        ref.taskHandle,
+        ref.serverProfile.id,
+      );
+      this.registry.recordError(ref.id, classified.message);
+      throw classified;
+    }
   }
 
   close(): void {
@@ -76,3 +238,5 @@ export class TaskDock {
     this.db.close();
   }
 }
+
+export { TaskDockError };

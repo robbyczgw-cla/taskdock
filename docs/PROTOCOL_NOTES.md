@@ -37,7 +37,9 @@ TaskDock stores the string verbatim. It never parses `:`, `/`, `+`, `=`, unicode
 
 For Streamable HTTP, `Mcp-Name` on `tasks/get`, `tasks/update`, and `tasks/cancel` MUST be `params.taskId`. Values that are not plain ASCII (or that have leading/trailing whitespace, or that match the sentinel pattern) MUST use `=?base64?{utf8-base64}?=`. The JSON-RPC body remains the source of truth. Servers decode the header before comparing it to the body.
 
-`tasks/update` and `input_required` are specified but not implemented in this spike. The fixture returns `-32601` for `tasks/update`.
+`tasks/update` is implemented. `taskdock update <id> --input-responses <json>`
+sends native `inputResponses` to the stored server. The fixture tool
+`needs_input` starts in `input_required` so that path can be tested.
 
 ## Session coupling
 
@@ -111,7 +113,7 @@ original JSON-RPC request id
 original client name
 ```
 
-URL alone is not a universal server identity. Two processes can share a URL over time, a gateway can multiplex many backends on one URL, and stdio has no URL. The spike uses a manually configured `serverProfileId`. Production still needs a stronger binding (canonical endpoint + server name + deployment/instance + auth realm). Replay of a handle against the wrong profile is a real footgun. Experiment H showed the server then returns "Task not found"; TaskDock keeps the row.
+URL alone is not a universal server identity. Two processes can share a URL over time, a gateway can multiplex many backends on one URL, and stdio has no URL. TaskDock stores a local `serverProfileId` plus a fingerprint of the canonical non-secret endpoint and `env:VAR` auth reference. See [SERVER_IDENTITY.md](SERVER_IDENTITY.md). Replay of a handle against the wrong profile is a real footgun. Experiment H showed the server then returns "Task not found"; TaskDock keeps the row.
 
 ## Stdio vs HTTP
 

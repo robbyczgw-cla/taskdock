@@ -30,6 +30,20 @@ function chmodQuiet(path: string, mode: number): void {
   }
 }
 
+function ensureColumn(
+  db: Database,
+  table: "tasks" | "server_profiles",
+  column: string,
+  type: "TEXT" | "INTEGER",
+): void {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/duplicate column name/i.test(message)) throw err;
+  }
+}
+
 export function openDatabase(path = defaultDbPath()): Database {
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -39,11 +53,10 @@ export function openDatabase(path = defaultDbPath()): Database {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec(SCHEMA_SQL);
-  try {
-    db.exec("ALTER TABLE tasks ADD COLUMN label TEXT");
-  } catch {
-    // column already exists
-  }
+  ensureColumn(db, "tasks", "label", "TEXT");
+  ensureColumn(db, "tasks", "ttl_ms", "INTEGER");
+  ensureColumn(db, "tasks", "last_error", "TEXT");
+  ensureColumn(db, "server_profiles", "fingerprint", "TEXT");
   chmodQuiet(path, 0o600);
   for (const extra of [path + "-wal", path + "-shm"]) {
     if (existsSync(extra)) chmodQuiet(extra, 0o600);

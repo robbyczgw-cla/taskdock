@@ -22,6 +22,8 @@ export type ServerProfile = {
    * Only `env:VAR` is stored. Literal credentials are rejected.
    */
   authProfile?: string;
+  /** SHA-256 of canonical non-secret transport + auth reference. */
+  fingerprint?: string;
 };
 
 export type TaskRecord = {
@@ -36,6 +38,8 @@ export type TaskRecord = {
   status?: string;
   sourceClient?: string;
   label?: string;
+  ttlMs?: number | null;
+  lastError?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -47,6 +51,7 @@ export type RegisterTaskInput = {
   status?: string;
   protocolVersion?: string;
   taskExtensionVersion?: string;
+  ttlMs?: number | null;
   metadata?: Record<string, unknown>;
 };
 
@@ -76,6 +81,7 @@ export type McpTask = {
   result?: Record<string, unknown>;
   error?: { code: number; message: string; data?: unknown };
   inputRequests?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
 };
 
 export type JsonRpcError = {

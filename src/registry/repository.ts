@@ -5,12 +5,18 @@ import type {
   Transport,
 } from "../types.ts";
 import type { Database } from "./db.ts";
+import {
+  sanitizeTransport,
+  serverFingerprint,
+} from "../server-profiles/fingerprint.js";
+import { normalizeAuthProfile } from "../server-profiles/profiles.js";
 
 type ProfileRow = {
   id: string;
   name: string;
   transport_json: string;
   auth_profile: string | null;
+  fingerprint?: string | null;
 };
 
 type TaskRow = {
@@ -22,6 +28,8 @@ type TaskRow = {
   status: string | null;
   source_client: string | null;
   label?: string | null;
+  ttl_ms?: number | null;
+  last_error?: string | null;
   created_at: string;
   last_seen_at: string;
   metadata_json: string | null;
@@ -33,6 +41,7 @@ function profileFromRow(row: ProfileRow): ServerProfile {
     name: row.name,
     transport: JSON.parse(row.transport_json) as Transport,
     authProfile: row.auth_profile ?? undefined,
+    fingerprint: row.fingerprint ?? undefined,
   };
 }
 
@@ -46,6 +55,8 @@ function taskFromRow(row: TaskRow): TaskRecord {
     status: row.status ?? undefined,
     sourceClient: row.source_client ?? undefined,
     label: row.label ?? undefined,
+    ttlMs: row.ttl_ms === undefined || row.ttl_ms === null ? undefined : row.ttl_ms,
+    lastError: row.last_error ?? undefined,
     createdAt: row.created_at,
     lastSeenAt: row.last_seen_at,
     metadata: row.metadata_json
@@ -69,23 +80,77 @@ function nextTaskId(db: Database): string {
 }
 
 export class Registry {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: Database) {
+    this.sanitizeStoredProfiles();
+  }
+
+  private sanitizeStoredProfiles(): void {
+    const rows = this.db
+      .prepare(`SELECT * FROM server_profiles`)
+      .all() as ProfileRow[];
+    const update = this.db.prepare(
+      `UPDATE server_profiles SET transport_json = ?, auth_profile = ?, fingerprint = ? WHERE id = ?`,
+    );
+    for (const row of rows) {
+      const profile = profileFromRow(row);
+      const transport = sanitizeTransport(profile.transport);
+      let authProfile: string | undefined;
+      try {
+        authProfile = normalizeAuthProfile(profile.authProfile);
+      } catch {
+        authProfile = undefined;
+      }
+      const fingerprint = serverFingerprint({ transport, authProfile });
+      const transportJson = JSON.stringify(transport);
+      if (
+        transportJson !== row.transport_json ||
+        (row.auth_profile ?? null) !== (authProfile ?? null) ||
+        row.fingerprint !== fingerprint
+      ) {
+        update.run(transportJson, authProfile ?? null, fingerprint, row.id);
+      }
+    }
+  }
+
+  private taskCount(serverProfileId: string): number {
+    const n = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM tasks WHERE server_profile_id = ?`)
+      .get(serverProfileId) as { n: number };
+    return n.n;
+  }
 
   addServer(profile: ServerProfile): ServerProfile {
+    const transport = sanitizeTransport(profile.transport);
+    const authProfile = normalizeAuthProfile(profile.authProfile);
+    const fingerprint = serverFingerprint({
+      transport,
+      authProfile,
+    });
+    const existing = this.getServer(profile.id);
+    if (existing && existing.fingerprint && existing.fingerprint !== fingerprint) {
+      const n = this.taskCount(profile.id);
+      if (n > 0) {
+        throw new Error(
+          `Cannot change server ${profile.id}: ${n} task(s) still reference it. Add a new profile id instead.`,
+        );
+      }
+    }
     this.db
       .prepare(
-        `INSERT INTO server_profiles (id, name, transport_json, auth_profile)
-         VALUES (?, ?, ?, ?)
+        `INSERT INTO server_profiles (id, name, transport_json, auth_profile, fingerprint)
+         VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            transport_json = excluded.transport_json,
-           auth_profile = excluded.auth_profile`,
+           auth_profile = excluded.auth_profile,
+           fingerprint = excluded.fingerprint`,
       )
       .run(
         profile.id,
         profile.name,
-        JSON.stringify(profile.transport),
-        profile.authProfile ?? null,
+        JSON.stringify(transport),
+        authProfile ?? null,
+        fingerprint,
       );
     return this.getServer(profile.id)!;
   }
@@ -109,12 +174,10 @@ export class Registry {
     if (!server) {
       throw new Error(`Unknown server profile: ${id}`);
     }
-    const n = this.db
-      .prepare(`SELECT COUNT(*) AS n FROM tasks WHERE server_profile_id = ?`)
-      .get(id) as { n: number };
-    if (n.n > 0) {
+    const n = this.taskCount(id);
+    if (n > 0) {
       throw new Error(
-        `Cannot remove server ${id}: ${n.n} task(s) still reference it`,
+        `Cannot remove server ${id}: ${n} task(s) still reference it`,
       );
     }
     this.db.prepare(`DELETE FROM server_profiles WHERE id = ?`).run(id);
@@ -160,6 +223,7 @@ export class Registry {
              label = COALESCE(?, label),
              protocol_version = COALESCE(?, protocol_version),
              extension_version = COALESCE(?, extension_version),
+             ttl_ms = COALESCE(?, ttl_ms),
              metadata_json = COALESCE(?, metadata_json)
            WHERE id = ?`,
         )
@@ -170,6 +234,7 @@ export class Registry {
           input.label ?? null,
           input.protocolVersion ?? null,
           input.taskExtensionVersion ?? null,
+          input.ttlMs ?? null,
           input.metadata ? JSON.stringify(input.metadata) : null,
           existing.id,
         );
@@ -182,8 +247,8 @@ export class Registry {
         `INSERT INTO tasks (
            id, task_handle, server_profile_id,
            protocol_version, extension_version, status, source_client, label,
-           created_at, last_seen_at, metadata_json
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ttl_ms, last_error, created_at, last_seen_at, metadata_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
       )
       .run(
         id,
@@ -194,6 +259,7 @@ export class Registry {
         input.status ?? null,
         input.sourceClient ?? null,
         input.label ?? null,
+        input.ttlMs ?? null,
         now,
         now,
         input.metadata ? JSON.stringify(input.metadata) : null,
@@ -220,22 +286,74 @@ export class Registry {
     return row ? taskFromRow(row) : undefined;
   }
 
-  list(): TaskRecord[] {
-    const rows = this.db
+  list(filter?: {
+    server?: string;
+    status?: string;
+    active?: boolean;
+  }): TaskRecord[] {
+    let rows = this.db
       .prepare(`SELECT * FROM tasks ORDER BY created_at`)
       .all() as TaskRow[];
-    return rows.map(taskFromRow);
+    if (filter?.server) {
+      rows = rows.filter((row) => row.server_profile_id === filter.server);
+    }
+    if (filter?.status) {
+      rows = rows.filter((row) => row.status === filter.status);
+    }
+    const records = rows.map(taskFromRow);
+    if (filter?.active) {
+      return records.filter((record) => {
+        const status = record.status;
+        if (!status) return true;
+        return status !== "completed" && status !== "failed" && status !== "cancelled";
+      });
+    }
+    return records;
   }
 
-  touch(id: string, status?: string): TaskRecord {
+  touch(
+    id: string,
+    status?: string,
+    extras?: { ttlMs?: number | null; clearError?: boolean },
+  ): TaskRecord {
     const now = new Date().toISOString();
-    this.db
-      .prepare(
-        `UPDATE tasks SET last_seen_at = ?, status = COALESCE(?, status) WHERE id = ?`,
-      )
-      .run(now, status ?? null, id);
+    if (extras?.ttlMs !== undefined) {
+      this.db
+        .prepare(
+          `UPDATE tasks SET last_seen_at = ?, status = COALESCE(?, status), ttl_ms = ?, last_error = CASE WHEN ? THEN NULL ELSE last_error END WHERE id = ?`,
+        )
+        .run(
+          now,
+          status ?? null,
+          extras.ttlMs,
+          extras.clearError ? 1 : 0,
+          id,
+        );
+    } else {
+      this.db
+        .prepare(
+          `UPDATE tasks SET last_seen_at = ?, status = COALESCE(?, status), last_error = CASE WHEN ? THEN NULL ELSE last_error END WHERE id = ?`,
+        )
+        .run(now, status ?? null, extras?.clearError ? 1 : 0, id);
+    }
     const updated = this.get(id);
     if (!updated) throw new Error(`Unknown task: ${id}`);
     return updated;
+  }
+
+  recordError(id: string, message: string): void {
+    this.db
+      .prepare(`UPDATE tasks SET last_error = ? WHERE id = ?`)
+      .run(message, id);
+  }
+
+  mergeMetadata(id: string, patch: Record<string, unknown>): TaskRecord {
+    const current = this.get(id);
+    if (!current) throw new Error(`Unknown task: ${id}`);
+    const metadata = { ...(current.metadata ?? {}), ...patch };
+    this.db
+      .prepare(`UPDATE tasks SET metadata_json = ? WHERE id = ?`)
+      .run(JSON.stringify(metadata), id);
+    return this.get(id)!;
   }
 }

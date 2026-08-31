@@ -19,6 +19,7 @@ export type StoredTask = {
   resultJson: string | null;
   errorJson: string | null;
   cancelled: number;
+  inputRequestsJson: string | null;
 };
 
 const SCHEMA = `
@@ -35,7 +36,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   complete_at TEXT NOT NULL,
   result_json TEXT,
   error_json TEXT,
-  cancelled INTEGER NOT NULL DEFAULT 0
+  cancelled INTEGER NOT NULL DEFAULT 0,
+  input_requests_json TEXT
 );
 `;
 
@@ -49,6 +51,11 @@ export class TaskStore {
     this.db = new DatabaseSync(path);
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec(SCHEMA);
+    try {
+      this.db.exec("ALTER TABLE tasks ADD COLUMN input_requests_json TEXT");
+    } catch {
+      // column already exists
+    }
     this.mode = mode;
     this.authToken = authToken;
   }
@@ -60,21 +67,25 @@ export class TaskStore {
     delayMs: number;
     ttlMs: number | null;
     pollIntervalMs: number;
+    status?: string;
+    inputRequests?: Record<string, unknown>;
   }): StoredTask {
     const now = new Date();
     const taskId = opts.taskId ?? `task_${randomBytes(8).toString("hex")}`;
     const completeAt = new Date(now.getTime() + opts.delayMs).toISOString();
+    const status = opts.status ?? "working";
     this.db
       .prepare(
         `INSERT INTO tasks (
            task_id, session_id, status, created_at, last_updated_at,
            ttl_ms, poll_interval_ms, message, delay_ms, complete_at,
-           result_json, error_json, cancelled
-         ) VALUES (?, ?, 'working', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0)`,
+           result_json, error_json, cancelled, input_requests_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?)`,
       )
       .run(
         taskId,
         opts.sessionId ?? null,
+        status,
         now.toISOString(),
         now.toISOString(),
         opts.ttlMs,
@@ -82,6 +93,7 @@ export class TaskStore {
         opts.message,
         opts.delayMs,
         completeAt,
+        opts.inputRequests ? JSON.stringify(opts.inputRequests) : null,
       );
     return this.getRaw(taskId)!;
   }
@@ -104,6 +116,7 @@ export class TaskStore {
           result_json: string | null;
           error_json: string | null;
           cancelled: number;
+          input_requests_json: string | null;
         }
       | undefined;
     if (!row) return undefined;
@@ -121,12 +134,60 @@ export class TaskStore {
       resultJson: row.result_json,
       errorJson: row.error_json,
       cancelled: row.cancelled,
+      inputRequestsJson: row.input_requests_json ?? null,
     };
+  }
+
+  delete(taskId: string): void {
+    this.db.prepare(`DELETE FROM tasks WHERE task_id = ?`).run(taskId);
+  }
+
+  forceExpire(taskId: string): void {
+    this.db
+      .prepare(`UPDATE tasks SET created_at = ?, ttl_ms = 1 WHERE task_id = ?`)
+      .run(new Date(0).toISOString(), taskId);
+  }
+
+  applyInput(
+    taskId: string,
+    inputResponses: Record<string, unknown>,
+  ): StoredTask | undefined {
+    const task = this.materialize(taskId);
+    if (!task) return undefined;
+    if (task.status === "expired") return task;
+    const outstanding = task.inputRequestsJson
+      ? (JSON.parse(task.inputRequestsJson) as Record<string, unknown>)
+      : {};
+    for (const key of Object.keys(inputResponses)) {
+      delete outstanding[key];
+    }
+    const now = new Date().toISOString();
+    if (Object.keys(outstanding).length === 0) {
+      const text =
+        extractInputText(inputResponses) ?? JSON.stringify(inputResponses);
+      const result = {
+        content: [{ type: "text", text }],
+        isError: false,
+      };
+      this.db
+        .prepare(
+          `UPDATE tasks SET status = 'completed', result_json = ?, input_requests_json = NULL, last_updated_at = ? WHERE task_id = ?`,
+        )
+        .run(JSON.stringify(result), now, taskId);
+    } else {
+      this.db
+        .prepare(
+          `UPDATE tasks SET input_requests_json = ?, last_updated_at = ? WHERE task_id = ?`,
+        )
+        .run(JSON.stringify(outstanding), now, taskId);
+    }
+    return this.getRaw(taskId);
   }
 
   cancel(taskId: string): StoredTask | undefined {
     const task = this.materialize(taskId);
     if (!task) return undefined;
+    if (task.status === "expired") return task;
     if (
       task.status === "completed" ||
       task.status === "failed" ||
@@ -154,6 +215,9 @@ export class TaskStore {
         return { ...task, status: "expired" };
       }
     }
+    if (task.status === "input_required") {
+      return task;
+    }
     if (
       task.status === "working" &&
       !task.cancelled &&
@@ -177,4 +241,15 @@ export class TaskStore {
   close(): void {
     this.db.close();
   }
+}
+
+function extractInputText(
+  inputResponses: Record<string, unknown>,
+): string | undefined {
+  for (const value of Object.values(inputResponses)) {
+    if (!value || typeof value !== "object") continue;
+    const content = (value as { content?: { input?: unknown } }).content;
+    if (content && typeof content.input === "string") return content.input;
+  }
+  return undefined;
 }

@@ -1,4 +1,5 @@
 import type { ServerProfile, Transport } from "../types.js";
+import { sanitizeTransport } from "./fingerprint.js";
 
 const ENV_AUTH = /^env:[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -8,7 +9,7 @@ export function parseTransport(args: {
   args?: string[];
 }): Transport {
   if (args.http) {
-    return { type: "http", url: args.http };
+    return sanitizeTransport({ type: "http", url: args.http });
   }
   if (args.stdio) {
     return { type: "stdio", command: args.stdio, args: args.args };

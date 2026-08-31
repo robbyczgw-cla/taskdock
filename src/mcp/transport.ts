@@ -1,5 +1,6 @@
 import type { JsonRpcResponse, ServerProfile } from "../types.js";
 import { requestMeta, tasksCapabilityHeaders, type ClientIdentity } from "./meta.js";
+import { AuthEnvMissingError, ServerUnavailableError } from "./errors.js";
 
 export class McpRpcError extends Error {
   constructor(
@@ -21,12 +22,16 @@ export type McpCallOptions = {
   extraHeaders?: Record<string, string>;
 };
 
-function resolveAuthToken(profile: ServerProfile): string | undefined {
+export function resolveAuthToken(profile: ServerProfile): string | undefined {
   const ref = profile.authProfile;
   if (!ref || ref === "none") return undefined;
   if (ref.startsWith("env:")) {
     const name = ref.slice(4);
-    return process.env[name];
+    const value = process.env[name];
+    if (value === undefined || value === "") {
+      throw new AuthEnvMissingError(name);
+    }
+    return value;
   }
   return undefined;
 }
@@ -84,11 +89,16 @@ export async function mcpCall<T = unknown>(
   const token = options.authToken ?? resolveAuthToken(profile);
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(profile.transport.url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(profile.transport.url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new ServerUnavailableError(profile.transport.url, err);
+  }
 
   const parsed = (await parseBody(res)) as JsonRpcResponse<T> | undefined;
   if (!parsed) {

@@ -56,6 +56,31 @@ export async function cancelTask(
     { taskId },
     options,
   );
+  if (result.resultType !== "complete") {
+    throw new Error(
+      `expected CancelTaskResult (resultType=complete), got: ${JSON.stringify(result)}`,
+    );
+  }
+  return result;
+}
+
+export async function updateTask(
+  profile: ServerProfile,
+  taskId: string,
+  inputResponses: Record<string, unknown>,
+  options: McpCallOptions,
+): Promise<Record<string, unknown>> {
+  const { result } = await mcpCall<Record<string, unknown>>(
+    profile,
+    "tasks/update",
+    { taskId, inputResponses },
+    options,
+  );
+  if (result.resultType !== "complete") {
+    throw new Error(
+      `expected UpdateTaskResult (resultType=complete), got: ${JSON.stringify(result)}`,
+    );
+  }
   return result;
 }
 

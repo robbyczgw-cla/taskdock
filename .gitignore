@@ -8,11 +8,5 @@ data/
 .taskdock/
 scratch/
 examples/rmcp-task-server/target/
-docs/_survey_*.md
-docs/_research_*.md
-docs/_experiment_log.md
-docs/_review.md
-docs/_codex_review.md
-docs/_claude_review.md
-docs/_v01_review.md
+docs/_*
 *.tgz
