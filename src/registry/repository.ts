@@ -186,13 +186,21 @@ export class Registry {
   }
 
   register(input: RegisterTaskInput): TaskRecord {
-    return this.ingest(input).record;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const record = this.upsertLocked(input, "register").record;
+      this.db.exec("COMMIT");
+      return record;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
   }
 
   ingest(input: RegisterTaskInput): IngestResult {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const result = this.ingestLocked(input);
+      const result = this.upsertLocked(input, "ingest");
       this.db.exec("COMMIT");
       return result;
     } catch (err) {
@@ -201,7 +209,10 @@ export class Registry {
     }
   }
 
-  private ingestLocked(input: RegisterTaskInput): IngestResult {
+  private upsertLocked(
+    input: RegisterTaskInput,
+    mode: "register" | "ingest",
+  ): IngestResult {
     const server = this.getServer(input.serverProfileId);
     if (!server) {
       throw new Error(
@@ -218,7 +229,10 @@ export class Registry {
         `SELECT * FROM tasks WHERE server_profile_id = ? AND task_handle = ?`,
       )
       .get(input.serverProfileId, input.taskHandle) as TaskRow | undefined;
-    const safeMeta = pickSafeMetadata(input.metadata);
+    const metadataJson =
+      mode === "ingest"
+        ? pickSafeMetadata(input.metadata)
+        : input.metadata;
 
     if (existing) {
       this.db
@@ -243,7 +257,13 @@ export class Registry {
           input.ttlMs ?? null,
           existing.id,
         );
-      if (safeMeta) this.mergeMetadata(existing.id, safeMeta);
+      if (mode === "register" && input.metadata) {
+        this.db
+          .prepare(`UPDATE tasks SET metadata_json = ? WHERE id = ?`)
+          .run(JSON.stringify(input.metadata), existing.id);
+      } else if (mode === "ingest" && metadataJson) {
+        this.mergeMetadata(existing.id, metadataJson);
+      }
       return { record: this.get(existing.id)!, created: false };
     }
 
@@ -268,7 +288,7 @@ export class Registry {
         input.ttlMs ?? null,
         now,
         now,
-        safeMeta ? JSON.stringify(safeMeta) : null,
+        metadataJson ? JSON.stringify(metadataJson) : null,
       );
     return { record: this.get(id)!, created: true };
   }

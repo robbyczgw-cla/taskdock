@@ -21,7 +21,8 @@ Not on npm. v0.1.0 remains the published package.
   `--strict`. Ordinary tool results are ignored (exit 0) so a hook can
   forward every tool response. See [docs/INGESTION.md](docs/INGESTION.md).
 - `TaskDock.ingest()` / `parseObservedTask()` for plugins that prefer the
-  library over a shell.
+  library over a shell. Ingest filters metadata to safe identity fields.
+  `register()` still persists caller-supplied `metadata` as on main.
 - Schema migration for `fingerprint`, `ttl_ms`, and `last_error`. Existing
   databases open and backfill fingerprints.
 

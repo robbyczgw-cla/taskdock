@@ -203,6 +203,27 @@ test("raw tool payload is not persisted", () => {
   dock.close();
 });
 
+test("ingest does not persist caller metadata that register would keep", () => {
+  const dock = new TaskDock(tempDb());
+  dock.addServer({
+    id: "demo",
+    name: "demo",
+    transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
+  });
+  const rec = dock.ingest({
+    serverProfileId: "demo",
+    nativeTaskId: "n1",
+    metadata: {
+      serverInfo: { name: "fx", version: "1", leak: "nope" },
+      prompt: "secret user text",
+    },
+  });
+  assert.deepEqual(rec.record.metadata, {
+    serverInfo: { name: "fx", version: "1" },
+  });
+  dock.close();
+});
+
 test("concurrent ingest of the same native task is one row", async () => {
   const path = tempDb();
   const setup = new TaskDock(path);
