@@ -3,7 +3,8 @@ CREATE TABLE IF NOT EXISTS server_profiles (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     transport_json TEXT NOT NULL,
-    auth_profile TEXT
+    auth_profile TEXT,
+    fingerprint TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
@@ -17,6 +18,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     status TEXT,
 
     source_client TEXT,
+    label TEXT,
+
+    ttl_ms INTEGER,
+    last_error TEXT,
 
     created_at TEXT NOT NULL,
     last_seen_at TEXT NOT NULL,

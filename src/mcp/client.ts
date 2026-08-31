@@ -1,7 +1,14 @@
 import type { ServerProfile } from "../types.js";
 import { discover } from "./transport.js";
-import type { ClientIdentity } from "./meta.js";
-import { callToolTask, getTask, pollUntilTerminal } from "./tasks.js";
+import { TASKS_EXTENSION, type ClientIdentity } from "./meta.js";
+import { TasksNotSupportedError } from "./errors.js";
+import {
+  callToolTask,
+  cancelTask,
+  getTask,
+  pollUntilTerminal,
+  updateTask,
+} from "./tasks.js";
 
 export type ConnectedClient = {
   profile: ServerProfile;
@@ -50,23 +57,37 @@ export function identityWarning(
   return undefined;
 }
 
+export function tasksExtensionAdvertised(
+  capabilities: Record<string, unknown> | undefined,
+): boolean {
+  const extensions = capabilities?.extensions;
+  if (!extensions || typeof extensions !== "object") return false;
+  return TASKS_EXTENSION in (extensions as Record<string, unknown>);
+}
+
 export async function connect(
   profile: ServerProfile,
   client: ClientIdentity,
   extras?: { authToken?: string },
 ): Promise<ConnectedClient> {
   const discovered = await discover(profile, { client, ...extras });
+  const capabilities = discovered.capabilities as Record<string, unknown> | undefined;
+  if (!tasksExtensionAdvertised(capabilities)) {
+    throw new TasksNotSupportedError(profile.id);
+  }
   return {
     profile,
     client,
     serverInfo: extractServerInfo(discovered),
-    capabilities: discovered.capabilities as Record<string, unknown> | undefined,
+    capabilities,
   };
 }
 
 export {
   callToolTask,
+  cancelTask,
   getTask,
   pollUntilTerminal,
+  updateTask,
   discover,
 };

@@ -1,16 +1,17 @@
 # TaskDock
 
-Durable handoff for MCP Tasks.
+Durable task index for MCP Tasks.
 
 ## What it does
 
 TaskDock records where a long-running MCP task lives, so a different client
-can pick it up later.
+can find it again later and drive it.
 
 When a tool call returns `resultType: "task"`, the server hands back an opaque
 `taskId`. That handle is the only way back to the work. TaskDock writes the
 handle and the server profile to a local SQLite file. Any later process reads
-the row, opens its own MCP connection, and calls `tasks/get`.
+the row, opens its own MCP connection, and calls `tasks/get`, `tasks/cancel`,
+or `tasks/update`.
 
 ```
    Client A  ──── tools/call ────▶  MCP server
@@ -20,13 +21,27 @@ the row, opens its own MCP connection, and calls `tasks/get`.
    TaskDock                             │
    (SQLite: server profile + handle)    │
       │                                 │
-      ▼                                 │
-   Client B  ──────── tasks/get ────────┘
+      ▼      tasks/get, tasks/cancel,   │
+   Client B  ──────── tasks/update ─────┘
 ```
 
 TaskDock does not keep the task alive. The MCP server does. TaskDock is a
 lookup table with a poller attached. It never proxies traffic, never re-runs
 work, and holds nothing in memory between commands.
+
+It is also not a gateway. A gateway sits in the path. Every task call goes
+through it, so it has to be running, has to be trusted, and it gets to rewrite
+what it forwards. TaskDock does none of that. Each command opens its own
+connection to the server with the handle it read from disk, and the native
+`taskId` goes out byte for byte. Delete the registry and your tasks keep
+running. You just lose the handles.
+
+### What it cannot do
+
+SEP-2663 has no `tasks/list`. There is no request that asks a server which
+tasks you own. TaskDock knows the handles it was given and nothing else, so a
+task that was never registered or observed is unrecoverable, by TaskDock or by
+anything else. Registration is the whole game.
 
 ## Why
 
@@ -40,9 +55,21 @@ though the server is still working. Nothing in the surveyed ecosystem is a
 vendor-neutral inventory of live task handles, so the job falls to a file you
 own. See [docs/CLIENT_COMPATIBILITY.md](docs/CLIENT_COMPATIBILITY.md).
 
+## Two kinds of id
+
+`td_01` is a TaskDock id. It is assigned at register time, it counts up, and it
+means nothing outside your SQLite file. The native MCP `taskId` is minted by the
+server and is the thing the server will actually answer to.
+
+Every command takes the TaskDock id. The native handle stays visible: `list`
+shows it abbreviated in the `NATIVE` column, `show` and `get` print it as
+`native:`, and `--json` carries it in full as `nativeTaskId`.
+
 ## Status
 
-v0.1 release candidate. Local-first, single machine, one SQLite file.
+v0.1.0 is released. This working tree adds the live control commands (`get`,
+`cancel`, `update`) and server fingerprints, and is not published yet.
+See [CHANGELOG.md](CHANGELOG.md).
 
 Resume works against the official Rust SDK (`rmcp` 3.1.4) and against this
 repo's fixture server. The constraint is upstream: modern Tasks is still rare
@@ -54,22 +81,19 @@ MIT License. See [LICENSE](LICENSE).
 ## Install
 
 ```bash
-npm pack
-npm install -g ./taskdock-0.1.0.tgz
+npm install -g taskdock
 taskdock --help
 ```
 
-Not published to npm yet. `npx taskdock` will not work until then.
-
-Needs Node 22 or newer for `node:sqlite`.
-
-To install from a checkout:
+That gets you v0.1.0. `get`, `cancel`, and `update` are not in it. To run those,
+work from a checkout:
 
 ```bash
 npm install
-npm pack
-npm install -g ./taskdock-0.1.0.tgz
+npx tsx src/cli.ts --help
 ```
+
+Needs Node 22 or newer for `node:sqlite`.
 
 The registry defaults to `~/.local/share/taskdock/taskdock.sqlite` on Linux.
 Set `TASKDOCK_DB` to point somewhere else.
@@ -81,18 +105,19 @@ Set `TASKDOCK_DB` to point somewhere else.
 
 ## Quick start
 
-Register a server, then register a handle you already have:
+Register a server, then register a native handle you already have:
 
 ```bash
 taskdock server add demo --http http://127.0.0.1:8000/mcp
-taskdock register --server demo --task 59b6f0e2-24c4-414d-a437-ed77ad80ae5f
+taskdock register --server demo --task-id 59b6f0e2-24c4-414d-a437-ed77ad80ae5f
 taskdock list
+taskdock get td_01
 taskdock resume td_01
 ```
 
-`td_01` is the first id on a fresh registry. `resume` opens a new connection,
-polls `tasks/get` until the task reaches a terminal state, and prints the
-result.
+`td_01` is the first id on a fresh registry. `get` opens a new connection and
+asks the server for the current state once. `resume` keeps polling until the
+task reaches a terminal state, then prints the result.
 
 To watch the whole handoff end to end, run the three-terminal demo:
 
@@ -118,63 +143,93 @@ Store a server profile. `--auth` names an environment variable, not a secret.
 TaskDock reads that variable when it connects and never writes the value to
 disk. Anything other than `env:VAR` is rejected.
 
+Writing a profile also computes a fingerprint, a SHA-256 over the canonical
+endpoint and the auth reference, never over a credential. Two aliases for the
+same endpoint hash the same, which is how you tell that a re-added profile
+points where the old one did. See
+[docs/SERVER_IDENTITY.md](docs/SERVER_IDENTITY.md).
+
 ### `server list`
 
 Table of stored profiles: id, transport, auth variable.
 
 ### `server show <id>`
 
-Full profile as JSON.
+Full profile as JSON, including the fingerprint.
 
 ### `server remove <id>`
 
 Delete a profile. Fails if tasks still reference it, so registered handles
 never end up orphaned.
 
-### `register --server <id> --task <handle> [--source-client <name>] [--status <status>]`
+### `register --server <id> --task-id <native-id> [--source-client <name>] [--label <label>]`
 
-Record a task handle against a server profile and print the assigned TaskDock
-id. Handles are stored byte for byte. TaskDock never parses them, so `:`, `/`,
-`+`, `=`, and non-ASCII all round-trip. The same handle on the same server is
-the same task; the same handle on two servers is two rows.
+Record a native task handle against a server profile and print the assigned
+TaskDock id. `--task` still works as an alias for `--task-id`.
 
-### `list [--json] [--active]`
+Handles are stored byte for byte. TaskDock never parses them, so `:`, `/`, `+`,
+`=`, and non-ASCII all round-trip. The same handle on the same server is the
+same task; the same handle on two servers is two rows.
 
-Registered tasks. `--active` hides terminal states. Human output abbreviates
-long handles so they do not end up in a screen share by accident. `--json`
-prints the full handle.
+### `list [--json] [--active] [--server <id>] [--status <status>]`
+
+Registered tasks: id, cached status, server, native handle, origin, age.
+`--active` hides terminal states, `--server` and `--status` filter. Human output
+abbreviates long handles so they do not end up in a screen share by accident.
+`--json` prints them in full.
 
 ### `show <id> [--json]`
 
-One task with its server profile, protocol version, timestamps, and metadata.
+The cached registry row. Server profile, protocol version, timestamps,
+metadata, and the status as of the last time something looked. It talks to
+nobody, which is why it labels the status stale.
 
-### `poll <id>`
+### `get <id> [--json]`
 
-One `tasks/get` on a fresh connection. Prints the current status and updates
-`last_seen_at`.
+A live `tasks/get` on a fresh connection. Prints the current status, any status
+message, the result or error, and writes the status back to the row. `poll` is
+an alias for the same thing.
 
-### `resume <id> [--until-done]`
+### `cancel <id> [--json]`
 
-Same as `poll`, but keeps polling until the task completes, fails, or is
-cancelled. `--until-done` is the default for `resume`.
+Routes `tasks/cancel` to the server, then reads the status back with one
+`tasks/get`. The server decides what cancellation means. TaskDock reports the
+acknowledgement and whatever status followed it.
+
+### `update <id> --input-responses <json> [--json]`
+
+Routes `tasks/update` with a JSON object of responses, for a task sitting in
+`input_required`, then reads the status back the same way. This is the one
+command that sends the server something other than a handle.
+
+### `resume <id>`
+
+Polls `tasks/get` on a fresh connection until the task completes, fails, or is
+cancelled, printing each status change on the way. If the task stops at
+`input_required`, `resume` says so and points you at `update`.
 
 ## How resume works
 
-1. Read the row. TaskDock loads the TaskDock id, the opaque handle, and the
+1. Read the row. TaskDock loads the TaskDock id, the native handle, and the
    server profile from SQLite. Nothing else is needed.
 2. Open a new connection. Every request carries
    `_meta.io.modelcontextprotocol/protocolVersion`, `clientInfo`, and
    `clientCapabilities`. Over Streamable HTTP, `Mcp-Name` repeats
    `params.taskId`; non-ASCII handles go over as `=?base64?...?=`, and the
    JSON-RPC body stays authoritative.
-3. Compare identity. If the server reports a different `name` or `version` than
-   the one recorded at registration, TaskDock warns and keeps going. Only you
-   know whether that redeploy invalidated the handle.
+3. Compare identity. If the server is reachable at `register` time, TaskDock
+   stores `serverInfo` from `server/discover`. If it is not, the first
+   successful `get`, `cancel`, or `update` does. Later calls warn if `name` or
+   `version` changed, then keep going. Only you know whether that redeploy
+   invalidated the handle. The profile fingerprint answers a narrower
+   question, whether two profiles point at the same endpoint, and is not an
+   attestation. See [docs/SERVER_IDENTITY.md](docs/SERVER_IDENTITY.md).
 4. Poll `tasks/get` and write each status back to the row.
 
 Step 2 is the whole claim. A connection that shares no state with Client A
 still finds the task, because on this protocol version there is no session
-state to share.
+state to share. `get`, `cancel`, and `update` take the same four steps and
+send one request instead of looping.
 
 The official TypeScript and Python SDKs reject `resultType: "task"` today, so
 TaskDock speaks raw JSON-RPC instead of using them.
@@ -187,17 +242,18 @@ Treat the registry file like a list of bearer tokens.
 The spec tells servers to mint task IDs with enough entropy to act as bearer
 credentials, and some do exactly that. TaskDock stores those handles in
 plaintext SQLite. It chmods the file to `0600` where the platform allows it,
-which is the only protection there is. Anyone who reads the file can poll or
-cancel your tasks.
+which is the only protection there is. Anyone who reads the file can poll,
+cancel, or update your tasks.
 
 `taskdock list` abbreviates handles in human output for this reason.
-`taskdock show` and `--json` print the full handle. Pipe JSON carefully. Keep
-it out of logs, pastebins, and terminal recordings.
+`taskdock show`, `taskdock get`, and `--json` print the full handle. Pipe JSON
+carefully. Keep it out of logs, pastebins, and terminal recordings.
 
 Credentials are the one thing TaskDock will not store. A server profile holds
 `env:TASKDOCK_AUTH_TOKEN`, the variable name, and resolves it from the
-environment at call time. Losing the SQLite file leaks your task handles. It
-does not leak your tokens.
+environment at call time. Fingerprints and stored transport details are
+stripped of URL userinfo before they are written. Losing the SQLite file leaks
+your task handles. It does not leak your tokens.
 
 ## Interop proof
 
@@ -225,10 +281,15 @@ Docker is required. Rust on the host is not.
   transcripts.
 - [docs/PROTOCOL_NOTES.md](docs/PROTOCOL_NOTES.md) covers what 2026-07-28
   changed and how handles travel on the wire.
+- [docs/SERVER_IDENTITY.md](docs/SERVER_IDENTITY.md) is the fingerprint
+  decision and what it does not prove.
 - [docs/CLIENT_COMPATIBILITY.md](docs/CLIENT_COMPATIBILITY.md) is the host and
   gateway survey.
 
 ## Limitations
+
+**Nothing you did not register.** There is no `tasks/list` to fall back on. If
+a handle never reached the registry, TaskDock cannot go looking for it.
 
 **Session-bound servers cannot be resumed.** If a server keys tasks to the
 connection that created them, a new connection gets "task not found" and
@@ -239,18 +300,16 @@ the whole premise, so check it early against your server.
 **HTTP only.** `server add --stdio` stores a profile, but the transport layer
 implements Streamable HTTP. Resume over stdio is not wired up.
 
-**No `tasks/update`.** If a task is `input_required`, `resume` stops and tells
-you to fulfill it with a compatible MCP client. TaskDock does not collect that
-input itself.
-
 **No daemon, no sync, no notifications.** Polling happens when you run a
 command. One SQLite file on one machine, single user. Copying the file (plus
 its WAL) to another machine works and is tested, but nothing reconciles two
 copies.
 
 **Client A is the bottleneck.** No major coding agent emitted a modern Tasks
-handle as of 2026-08-29. Until that changes, you are registering handles from
-your own code, from MCP Inspector, or from these demo clients.
+handle as of 2026-08-29, and none of them hand their handles to anything.
+Registration is an explicit CLI call today. `src/ingest/` defines the interface
+a client-specific observer would implement, so that when a host does start
+emitting handles the registry does not grow a special case per host.
 
 **License.** MIT. See [LICENSE](LICENSE).
 
@@ -258,7 +317,7 @@ your own code, from MCP Inspector, or from these demo clients.
 
 ```bash
 npm install
-npm test          # registry, MCP resume, and header encoding tests
+npm test          # registry, MCP resume, control commands, header encoding
 npm run typecheck
 npm run demo      # scripted end-to-end handoff
 npm run experiments
@@ -269,7 +328,8 @@ Layout:
 
 - `src/registry/` SQLite schema and repository
 - `src/mcp/` JSON-RPC transport, Tasks calls, `_meta` and header encoding
-- `src/server-profiles/` profile parsing
+- `src/server-profiles/` profile parsing and fingerprints
+- `src/ingest/` how handles get in; CLI today, observers later
 - `src/clients/` the Client A and Client B demo processes
 - `src/cli.ts` command surface, `src/taskdock.ts` library API
 - `fixtures/test-task-server/` controlled Tasks server, including the

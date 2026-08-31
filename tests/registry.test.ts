@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 import { TaskDock } from "../src/taskdock.ts";
 import { tempDb } from "./helpers.ts";
 
@@ -170,6 +171,121 @@ test("addServer stores env:VAR and rejects a literal credential", () => {
   dock.close();
 });
 
+test("list filters by server, status, and active", () => {
+  const dock = new TaskDock(tempDb());
+  dock.addServer({
+    id: "s1",
+    name: "s1",
+    transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
+  });
+  dock.addServer({
+    id: "s2",
+    name: "s2",
+    transport: { type: "http", url: "http://127.0.0.1:2/mcp" },
+  });
+  dock.register({
+    serverProfileId: "s1",
+    taskHandle: "a",
+    status: "working",
+  });
+  dock.register({
+    serverProfileId: "s1",
+    taskHandle: "b",
+    status: "completed",
+  });
+  dock.register({
+    serverProfileId: "s2",
+    taskHandle: "c",
+    status: "working",
+  });
+  assert.equal(dock.list({ server: "s1" }).length, 2);
+  assert.equal(dock.list({ status: "working" }).length, 2);
+  assert.equal(dock.list({ active: true }).length, 2);
+  assert.equal(dock.list({ server: "s1", status: "completed" }).length, 1);
+  dock.close();
+});
+
+test("addServer refuses identity change while tasks exist", () => {
+  const dock = new TaskDock(tempDb());
+  dock.addServer({
+    id: "demo",
+    name: "demo",
+    transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
+  });
+  dock.register({ serverProfileId: "demo", taskHandle: "h1" });
+  assert.throws(
+    () =>
+      dock.addServer({
+        id: "demo",
+        name: "demo",
+        transport: { type: "http", url: "http://127.0.0.1:9/mcp" },
+      }),
+    /Cannot change server demo/,
+  );
+  const kept = dock.getServer("demo");
+  assert.equal(kept?.transport.type, "http");
+  if (kept?.transport.type === "http") {
+    assert.equal(kept.transport.url, "http://127.0.0.1:1/mcp");
+  }
+  dock.addServer({
+    id: "demo",
+    name: "renamed",
+    transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
+  });
+  assert.equal(dock.getServer("demo")?.name, "renamed");
+  dock.close();
+});
+
+test("re-register does not clear a retained last_error", () => {
+  const dock = new TaskDock(tempDb());
+  dock.addServer({
+    id: "demo",
+    name: "demo",
+    transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
+  });
+  const rec = dock.register({
+    serverProfileId: "demo",
+    taskHandle: "h1",
+    status: "working",
+  });
+  dock.registry.recordError(rec.id, "Native task expired: h1");
+  const again = dock.register({
+    serverProfileId: "demo",
+    taskHandle: "h1",
+    sourceClient: "client-a",
+  });
+  assert.equal(again.id, rec.id);
+  assert.equal(again.lastError, "Native task expired: h1");
+  assert.equal(again.sourceClient, "client-a");
+  dock.close();
+});
+
+test("fingerprint is stable and omits secrets", () => {
+  const dock = new TaskDock(tempDb());
+  const a = dock.addServer({
+    id: "one",
+    name: "display-one",
+    transport: { type: "http", url: "http://user:secret@127.0.0.1:9/mcp/" },
+    authProfile: "env:TASKDOCK_AUTH_TOKEN",
+  });
+  const b = dock.addServer({
+    id: "two",
+    name: "display-two",
+    transport: { type: "http", url: "HTTP://127.0.0.1:9/mcp" },
+    authProfile: "env:TASKDOCK_AUTH_TOKEN",
+  });
+  assert.equal(a.fingerprint, b.fingerprint);
+  assert.ok(a.fingerprint && a.fingerprint.length === 64);
+  assert.equal(a.transport.type, "http");
+  if (a.transport.type === "http") {
+    assert.equal(a.transport.url.includes("secret"), false);
+    assert.equal(a.transport.url.includes("user:"), false);
+  }
+  const raw = JSON.stringify(a);
+  assert.equal(raw.includes("secret"), false);
+  dock.close();
+});
+
 test("label round-trips", () => {
   const dock = new TaskDock(tempDb());
   dock.addServer({
@@ -184,5 +300,55 @@ test("label round-trips", () => {
   });
   assert.equal(rec.label, "review-pr");
   assert.equal(dock.show(rec.id).label, "review-pr");
+  dock.close();
+});
+
+test("openDatabase upgrades a prior schema and backfills fingerprints", () => {
+  const path = tempDb();
+  const old = new DatabaseSync(path);
+  old.exec(`
+    CREATE TABLE server_profiles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      transport_json TEXT NOT NULL,
+      auth_profile TEXT
+    );
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      task_handle TEXT NOT NULL,
+      server_profile_id TEXT NOT NULL,
+      protocol_version TEXT,
+      extension_version TEXT,
+      status TEXT,
+      source_client TEXT,
+      created_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      metadata_json TEXT,
+      FOREIGN KEY(server_profile_id) REFERENCES server_profiles(id)
+    );
+  `);
+  old
+    .prepare(
+      `INSERT INTO server_profiles (id, name, transport_json, auth_profile)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(
+      "demo",
+      "demo",
+      JSON.stringify({ type: "http", url: "http://127.0.0.1:1/mcp" }),
+      null,
+    );
+  old.close();
+
+  const dock = new TaskDock(path);
+  const server = dock.getServer("demo");
+  assert.ok(server?.fingerprint);
+  assert.equal(server.fingerprint?.length, 64);
+  const rec = dock.register({
+    serverProfileId: "demo",
+    taskHandle: "upgraded",
+    label: "ok",
+  });
+  assert.equal(rec.label, "ok");
   dock.close();
 });

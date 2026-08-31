@@ -26,6 +26,8 @@ const INSTANCE_ID =
   process.env.TASKDOCK_FIXTURE_INSTANCE ?? `inst_${randomBytes(4).toString("hex")}`;
 
 const store = new TaskStore(DB_PATH, BINDING, AUTH_TOKEN);
+const vanishOnAck = new Set<string>();
+const expireOnAck = new Set<string>();
 
 const TOOLS = [
   {
@@ -40,6 +42,17 @@ const TOOLS = [
         ttlMs: { type: "number" },
       },
       required: ["message"],
+    },
+  },
+  {
+    name: "needs_input",
+    description: "Create a task that waits for tasks/update input.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string" },
+        handle: { type: "string" },
+      },
     },
   },
 ];
@@ -112,6 +125,12 @@ function taskView(task: StoredTask) {
     pollIntervalMs: task.pollIntervalMs,
     _meta: serverMeta(),
   };
+  if (task.status === "input_required" && task.inputRequestsJson) {
+    return {
+      ...base,
+      inputRequests: JSON.parse(task.inputRequestsJson) as Record<string, unknown>,
+    };
+  }
   if (task.status === "completed" && task.resultJson) {
     return { ...base, result: JSON.parse(task.resultJson) };
   }
@@ -130,8 +149,14 @@ function createView(task: StoredTask) {
     lastUpdatedAt: task.lastUpdatedAt,
     ttlMs: task.ttlMs,
     pollIntervalMs: task.pollIntervalMs,
-    statusMessage: `echoing after ${task.delayMs}ms`,
+    statusMessage:
+      task.status === "input_required"
+        ? "waiting for input"
+        : `echoing after ${task.delayMs}ms`,
     _meta: serverMeta(),
+    ...(task.inputRequestsJson
+      ? { inputRequests: JSON.parse(task.inputRequestsJson) as Record<string, unknown> }
+      : {}),
   };
 }
 
@@ -303,27 +328,108 @@ async function handleRpc(
     }
     const name = params.name as string;
     const args = (params.arguments as Record<string, unknown>) ?? {};
-    if (name !== "slow_echo") {
+    const sessionId = sessionFor(req, true);
+    const handle = typeof args.handle === "string" ? args.handle : undefined;
+    let task: StoredTask;
+    if (name === "needs_input") {
+      const prompt = String(args.prompt ?? "Provide a message.");
+      task = store.create({
+        taskId: handle,
+        sessionId,
+        message: prompt,
+        delayMs: 0,
+        ttlMs: 3_600_000,
+        pollIntervalMs: 50,
+        status: "input_required",
+        inputRequests: {
+          prompt: {
+            method: "elicitation/create",
+            params: { message: prompt },
+          },
+        },
+      });
+    } else if (name === "slow_echo") {
+      const message = String(args.message ?? "");
+      const delayMs = Number(args.delayMs ?? 1500);
+      const ttlMs =
+        args.ttlMs === undefined ? 3_600_000 : (args.ttlMs as number | null);
+      task = store.create({
+        taskId: handle,
+        sessionId,
+        message,
+        delayMs,
+        ttlMs,
+        pollIntervalMs: Math.min(500, Math.max(50, Math.floor(delayMs / 5))),
+      });
+      if (args.vanishOnAck === true) vanishOnAck.add(task.taskId);
+      if (args.expireOnAck === true) expireOnAck.add(task.taskId);
+    } else {
       send(res, 200, jsonrpcError(id, -32601, `Unknown tool: ${name}`));
       return;
     }
-    const message = String(args.message ?? "");
-    const delayMs = Number(args.delayMs ?? 1500);
-    const ttlMs =
-      args.ttlMs === undefined ? 3_600_000 : (args.ttlMs as number | null);
-    const handle = typeof args.handle === "string" ? args.handle : undefined;
-    const sessionId = sessionFor(req, true);
-    const task = store.create({
-      taskId: handle,
-      sessionId,
-      message,
-      delayMs,
-      ttlMs,
-      pollIntervalMs: Math.min(500, Math.max(50, Math.floor(delayMs / 5))),
-    });
     const extra: Record<string, string> = {};
     if (sessionId) extra["X-Fixture-Session"] = sessionId;
     send(res, 200, jsonrpcResult(id, createView(task)), extra);
+    return;
+  }
+
+  if (method === "tasks/update") {
+    if (!clientHasTasks(params)) {
+      send(
+        res,
+        200,
+        jsonrpcError(id, -32021, "Missing required client capability", {
+          requiredCapabilities: {
+            extensions: { "io.modelcontextprotocol/tasks": {} },
+          },
+        }),
+      );
+      return;
+    }
+    const taskId = params.taskId as string;
+    if (!taskId) {
+      send(res, 200, jsonrpcError(id, -32602, "taskId is required"));
+      return;
+    }
+    const existing = store.getRaw(taskId);
+    if (!existing) {
+      send(
+        res,
+        200,
+        jsonrpcError(id, -32602, "Failed to retrieve task: Task not found"),
+      );
+      return;
+    }
+    if (BINDING === "session") {
+      const sess = sessionFor(req, false);
+      if (!sess || sess !== existing.sessionId) {
+        send(
+          res,
+          200,
+          jsonrpcError(
+            id,
+            -32602,
+            "Failed to retrieve task: Task not found in this session",
+          ),
+        );
+        return;
+      }
+    }
+    const materialized = store.materialize(taskId);
+    if (materialized?.status === "expired") {
+      send(
+        res,
+        200,
+        jsonrpcError(id, -32602, "Failed to retrieve task: Task has expired"),
+      );
+      return;
+    }
+    const inputResponses =
+      (params.inputResponses as Record<string, unknown> | undefined) ?? {};
+    store.applyInput(taskId, inputResponses);
+    send(res, 200, jsonrpcResult(id, { resultType: "complete" }));
+    if (vanishOnAck.has(taskId)) store.delete(taskId);
+    if (expireOnAck.has(taskId)) store.forceExpire(taskId);
     return;
   }
 
@@ -371,8 +477,19 @@ async function handleRpc(
           return;
         }
       }
+      const materialized = store.materialize(taskId);
+      if (materialized?.status === "expired") {
+        send(
+          res,
+          200,
+          jsonrpcError(id, -32602, "Failed to retrieve task: Task has expired"),
+        );
+        return;
+      }
       store.cancel(taskId);
       send(res, 200, jsonrpcResult(id, { resultType: "complete" }));
+      if (vanishOnAck.has(taskId)) store.delete(taskId);
+      if (expireOnAck.has(taskId)) store.forceExpire(taskId);
       return;
     }
 
